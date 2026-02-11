@@ -3,16 +3,247 @@
 <head>
   <base target="_top">
   <?!= include('Styles') ?>
+  <style>
+    .assessment-list {
+      max-height: 320px;
+      overflow-y: auto;
+      margin-bottom: 12px;
+    }
+
+    .assessment-card {
+      border: 1px solid #dadce0;
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+    }
+
+    .assessment-card:hover {
+      border-color: #1a73e8;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .card-marker {
+      background: #1a73e8;
+      color: white;
+      font-weight: bold;
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 10px;
+      min-width: 18px;
+      text-align: center;
+    }
+
+    .card-confidence {
+      font-size: 11px;
+      font-weight: bold;
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+
+    .conf-very-high, .conf-high { background: #e6f4ea; color: #137333; }
+    .conf-medium { background: #fef7e0; color: #e37400; }
+    .conf-low, .conf-very-low { background: #fce8e6; color: #d93025; }
+
+    .card-claim {
+      font-size: 12px;
+      color: #333;
+      margin-bottom: 6px;
+      line-height: 1.4;
+    }
+
+    .card-meta {
+      font-size: 11px;
+      color: #888;
+      margin-bottom: 8px;
+    }
+
+    .card-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .card-actions button {
+      font-size: 11px;
+      padding: 4px 10px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      background: white;
+      cursor: pointer;
+      color: #333;
+    }
+
+    .card-actions button:hover {
+      background: #f1f3f4;
+    }
+
+    .card-actions .btn-delete {
+      color: #d93025;
+      border-color: #d93025;
+    }
+
+    .card-actions .btn-delete:hover {
+      background: #fce8e6;
+    }
+
+    .empty-state {
+      text-align: center;
+      color: #888;
+      padding: 40px 20px;
+      font-size: 13px;
+    }
+
+    .manager-footer {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      padding-top: 8px;
+      border-top: 1px solid #dadce0;
+    }
+  </style>
 </head>
 <body>
   <h3>Evidence Assessments</h3>
 
-  <p style="text-align: center; color: #888; font-size: 12px;">
-    Management dialog loaded successfully. Full list coming in Session 5.
-  </p>
+  <div id="statusMsg" class="status-msg"></div>
 
-  <div class="btn-row">
-    <button class="btn btn-secondary" onclick="google.script.host.close()">Close</button>
+  <div id="assessmentList" class="assessment-list">
+    <div class="empty-state">Loading...</div>
   </div>
+
+  <div class="manager-footer">
+    <button class="btn btn-primary" onclick="regenerateAppendix()" style="flex:none;padding:6px 14px;">
+      Regenerate Appendix
+    </button>
+    <button class="btn btn-secondary" onclick="google.script.host.close()" style="flex:none;padding:6px 14px;">
+      Close
+    </button>
+  </div>
+
+  <script>
+    var assessments = [];
+
+    function init() {
+      google.script.run
+        .withSuccessHandler(renderAssessments)
+        .withFailureHandler(function(err) {
+          showStatus('error', 'Failed to load assessments: ' + err.message);
+        })
+        .getAllAssessments();
+    }
+
+    function renderAssessments(data) {
+      assessments = data || [];
+      var container = document.getElementById('assessmentList');
+
+      if (assessments.length === 0) {
+        container.innerHTML = '<div class="empty-state">No assessments yet.<br>Use "Assess Selected Text" to create one.</div>';
+        return;
+      }
+
+      var html = '';
+      for (var i = 0; i < assessments.length; i++) {
+        var a = assessments[i];
+        var claimPreview = a.claimText.length > 100
+          ? a.claimText.substring(0, 97) + '...'
+          : a.claimText;
+
+        var confClass = 'conf-' + a.confidence.level;
+        var confLabel = formatConfidence(a.confidence.level);
+        var sourceCount = (a.evidence.sources && a.evidence.sources.length) || 0;
+        var qualityLabel = capitalize(a.evidence.quality);
+
+        html += '<div class="assessment-card" id="card-' + a.id + '">'
+          + '<div class="card-header">'
+          + '<span class="card-marker">' + a.markerNumber + '</span>'
+          + '<span class="card-confidence ' + confClass + '">' + confLabel + '</span>'
+          + '</div>'
+          + '<div class="card-claim">' + escapeHtml(claimPreview) + '</div>'
+          + '<div class="card-meta">'
+          + qualityLabel + ' evidence &middot; '
+          + sourceCount + ' source' + (sourceCount !== 1 ? 's' : '')
+          + '</div>'
+          + '<div class="card-actions">'
+          + '<button onclick="editAssessment(\'' + a.id + '\')">Edit</button>'
+          + '<button class="btn-delete" onclick="confirmDelete(\'' + a.id + '\', ' + a.markerNumber + ')">Delete</button>'
+          + '</div>'
+          + '</div>';
+      }
+
+      container.innerHTML = html;
+    }
+
+    function editAssessment(id) {
+      google.script.host.close();
+      google.script.run.showEditSidebar(id);
+    }
+
+    function confirmDelete(id, markerNumber) {
+      if (!confirm('Delete assessment #' + markerNumber + '? This will also remove the marker from the document.')) {
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success) {
+            showStatus('success', 'Assessment deleted.');
+            // Remove the card from the list
+            var card = document.getElementById('card-' + id);
+            if (card) card.remove();
+            // Check if list is now empty
+            var remaining = document.querySelectorAll('.assessment-card');
+            if (remaining.length === 0) {
+              document.getElementById('assessmentList').innerHTML =
+                '<div class="empty-state">No assessments remaining.</div>';
+            }
+          } else {
+            showStatus('error', (result && result.error) || 'Failed to delete.');
+          }
+        })
+        .withFailureHandler(function(err) {
+          showStatus('error', 'Delete failed: ' + err.message);
+        })
+        .handleDeleteAssessment(id);
+    }
+
+    function regenerateAppendix() {
+      google.script.host.close();
+      google.script.run.generateAppendix();
+    }
+
+    function formatConfidence(level) {
+      var labels = {
+        'very-low': 'Very Low',
+        'low': 'Low',
+        'medium': 'Medium',
+        'high': 'High',
+        'very-high': 'Very High'
+      };
+      return labels[level] || level;
+    }
+
+    function capitalize(str) {
+      return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+
+    function escapeHtml(text) {
+      var div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function showStatus(type, message) {
+      var el = document.getElementById('statusMsg');
+      el.className = 'status-msg ' + type;
+      el.textContent = message;
+    }
+
+    init();
+  </script>
 </body>
 </html>
