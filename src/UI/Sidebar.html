@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <?!= include('Styles') ?>
+</head>
+<body>
+  <h3 id="formTitle">Assess Evidence</h3>
+
+  <div id="statusMsg" class="status-msg"></div>
+
+  <div class="claim-display" id="claimDisplay">
+    <em>Select text in the document, then open this sidebar.</em>
+  </div>
+
+  <p style="text-align: center; color: #888; font-size: 12px;">
+    Sidebar loaded successfully. Full assessment form coming in Session 2.
+  </p>
+
+  <div class="btn-row">
+    <button class="btn btn-secondary" onclick="google.script.host.close()">Close</button>
+  </div>
+
+  <script>
+    // On load, fetch the selected text from the document
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result && result.text) {
+          document.getElementById('claimDisplay').textContent = result.text;
+        }
+      })
+      .withFailureHandler(function(err) {
+        console.log('Could not get selection: ' + err.message);
+      })
+      .getSelectedText();
+  </script>
+</body>
+</html>
