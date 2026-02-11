@@ -15,6 +15,8 @@ function onOpen(e) {
     .addItem('Generate Appendix', 'generateAppendix')
     .addSeparator()
     .addItem('Sync Markers', 'syncMarkers')
+    .addSeparator()
+    .addItem('Help', 'showHelp')
     .addToUi();
 }
 
@@ -32,7 +34,6 @@ function onInstall(e) {
  */
 function showAssessmentSidebar() {
   var selectionData = getSelectedText();
-  Logger.log('Selection data: ' + JSON.stringify(selectionData));
 
   var template = HtmlService.createTemplateFromFile('UI/Sidebar');
   template.selectionData = selectionData ? JSON.stringify(selectionData) : 'null';
@@ -108,4 +109,41 @@ function syncMarkers() {
       );
     }
   }, 'Failed to sync markers.');
+}
+
+/**
+ * Shows a quick-reference help dialog.
+ */
+function showHelp() {
+  var html = HtmlService.createHtmlOutput(
+    '<div style="font-family:Arial,sans-serif;font-size:13px;padding:8px;">'
+    + '<h3 style="color:#1a73e8;margin-top:0;">Evidence Assessment v' + CONFIG.VERSION + '</h3>'
+    + '<p>Systematic IPCC-style uncertainty communication for policy documents.</p>'
+    + '<h4 style="margin-bottom:4px;">Quick Start</h4>'
+    + '<ol style="padding-left:20px;">'
+    + '<li>Highlight a claim in your document</li>'
+    + '<li><b>Evidence Assessment → Assess Selected Text</b></li>'
+    + '<li>Rate evidence quality, agreement, and confidence</li>'
+    + '<li>Click Save — a numbered marker appears in the document</li>'
+    + '<li><b>Evidence Assessment → Generate Appendix</b> to create the summary</li>'
+    + '</ol>'
+    + '<h4 style="margin-bottom:4px;">Menu Items</h4>'
+    + '<ul style="padding-left:20px;">'
+    + '<li><b>Assess Selected Text</b> — Create a new assessment</li>'
+    + '<li><b>Manage Assessments</b> — View, edit, or delete assessments</li>'
+    + '<li><b>Generate Appendix</b> — Create/update the evidence appendix</li>'
+    + '<li><b>Sync Markers</b> — Renumber markers if they get out of order</li>'
+    + '</ul>'
+    + '<h4 style="margin-bottom:4px;">Tips</h4>'
+    + '<ul style="padding-left:20px;">'
+    + '<li>Regenerate the appendix after editing assessments</li>'
+    + '<li>Don\'t manually edit the appendix — it will be overwritten</li>'
+    + '<li>Use Sync Markers if you notice numbering gaps</li>'
+    + '</ul>'
+    + '</div>'
+  )
+  .setWidth(400)
+  .setHeight(380);
+
+  DocumentApp.getUi().showModalDialog(html, 'Help — Evidence Assessment');
 }

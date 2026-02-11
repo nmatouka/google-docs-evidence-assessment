@@ -241,7 +241,12 @@
     }
 
     function showError(elementId) {
-      document.getElementById(elementId).classList.add('visible');
+      var el = document.getElementById(elementId);
+      el.classList.add('visible');
+      // Scroll the first visible error into view
+      if (!document.querySelector('.error.visible')) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
     }
 
     function clearErrors() {

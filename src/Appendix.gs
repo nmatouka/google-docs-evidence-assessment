@@ -107,6 +107,23 @@ function findAppendixSection(body) {
 }
 
 /**
+ * Removes the entire appendix section from the document (heading + all content).
+ * Called when the last assessment is deleted.
+ */
+function removeAppendixSection() {
+  try {
+    var body = DocumentApp.getActiveDocument().getBody();
+    var appendixIndex = findAppendixSection(body);
+    if (appendixIndex !== null) {
+      clearAppendixContent(body, appendixIndex);
+      Logger.log('Appendix section removed.');
+    }
+  } catch (err) {
+    Logger.log('removeAppendixSection error: ' + err.message);
+  }
+}
+
+/**
  * Removes all content from the appendix heading to the end of the document.
  * @param {Body} body - The document body.
  * @param {number} startIndex - The child index of the appendix heading.

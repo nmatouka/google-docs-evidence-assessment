@@ -11,25 +11,11 @@ function getSelectedText() {
     var doc = DocumentApp.getActiveDocument();
     var selection = doc.getSelection();
 
-    Logger.log('getSelectedText called. Selection exists: ' + (selection !== null));
-
     if (!selection) {
-      // Fall back to cursor position — user may have clicked without dragging
-      var cursor = doc.getCursor();
-      Logger.log('No selection. Cursor exists: ' + (cursor !== null));
-      if (cursor) {
-        var surroundingText = cursor.getSurroundingText();
-        if (surroundingText) {
-          var text = surroundingText.getText();
-          Logger.log('Cursor surrounding text: "' + text + '"');
-        }
-      }
       return null;
     }
 
     var elements = selection.getRangeElements();
-    Logger.log('Range elements count: ' + elements.length);
-
     if (elements.length === 0) {
       return null;
     }
@@ -44,18 +30,14 @@ function getSelectedText() {
       var element = elements[i];
       var el = element.getElement();
 
-      Logger.log('Element ' + i + ' type: ' + el.getType());
-
-      // Get text content — handle both TEXT and PARAGRAPH elements
+      // Handle TEXT, PARAGRAPH, and LIST_ITEM elements
       var textEl;
       if (el.getType() === DocumentApp.ElementType.TEXT) {
         textEl = el;
       } else if (el.getType() === DocumentApp.ElementType.PARAGRAPH ||
                  el.getType() === DocumentApp.ElementType.LIST_ITEM) {
-        // When a full paragraph is selected, the element is the paragraph itself
         textEl = el.editAsText();
       } else {
-        Logger.log('Skipping unsupported element type: ' + el.getType());
         continue;
       }
 
@@ -68,18 +50,16 @@ function getSelectedText() {
         endOffset = text.length - 1;
       }
 
-      // Get paragraph index — walk up to find direct child of body
+      // Walk up to find the direct child of body for paragraph index
       if (i === 0) {
         try {
           var body = doc.getBody();
           var parent = el;
-          // Walk up until we find a direct child of body
           while (parent.getParent() && parent.getParent().getType() !== DocumentApp.ElementType.BODY_SECTION) {
             parent = parent.getParent();
           }
           paragraphIndex = body.getChildIndex(parent);
         } catch (indexErr) {
-          Logger.log('Could not get paragraph index: ' + indexErr.message);
           paragraphIndex = 0;
         }
       }
@@ -90,8 +70,6 @@ function getSelectedText() {
     }
 
     var fullText = textParts.join(' ').trim();
-    Logger.log('Extracted text: "' + fullText.substring(0, 100) + '"');
-
     if (!fullText) {
       return null;
     }
@@ -103,7 +81,7 @@ function getSelectedText() {
       endOffset: endOffset
     };
   } catch (err) {
-    Logger.log('getSelectedText error: ' + err.message + '\n' + err.stack);
+    Logger.log('getSelectedText error: ' + err.message);
     return null;
   }
 }
@@ -328,8 +306,13 @@ function handleDeleteAssessment(id) {
       return { success: false, error: 'Failed to delete assessment from storage.' };
     }
 
-    // Renumber remaining markers to keep them sequential
-    renumberAllMarkers();
+    // If assessments remain, renumber markers; otherwise remove the appendix
+    var remaining = loadAssessments();
+    if (remaining.length > 0) {
+      renumberAllMarkers();
+    } else {
+      removeAppendixSection();
+    }
 
     Logger.log('Assessment deleted: ' + id);
     return { success: true };
