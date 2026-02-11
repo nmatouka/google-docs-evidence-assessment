@@ -95,13 +95,13 @@ function findAppendixSection(body) {
  * @param {number} startIndex - The child index of the appendix heading.
  */
 function clearAppendixContent(body, startIndex) {
+  // Google Docs requires at least one child in the body at all times.
+  // Append a temporary blank paragraph first so we can safely remove everything.
+  body.appendParagraph('');
+
   var numChildren = body.getNumChildren();
-  // Remove from end backward to avoid index shifting
-  for (var i = numChildren - 1; i >= startIndex; i--) {
-    // Don't remove the last element (Google Docs requires at least one)
-    if (body.getNumChildren() > 1) {
-      body.removeChild(body.getChild(i));
-    }
+  for (var i = numChildren - 2; i >= startIndex; i--) {
+    body.removeChild(body.getChild(i));
   }
 }
 
