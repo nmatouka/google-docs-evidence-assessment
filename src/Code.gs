@@ -8,7 +8,7 @@
  */
 function onOpen(e) {
   DocumentApp.getUi()
-    .createAddonMenu()
+    .createMenu('Evidence Assessment')
     .addItem('Assess Selected Text', 'showAssessmentSidebar')
     .addItem('Manage Assessments', 'showManager')
     .addSeparator()
@@ -28,12 +28,41 @@ function onInstall(e) {
 
 /**
  * Opens the assessment sidebar for creating a new assessment.
+ * Captures the selected text BEFORE opening the sidebar (selection is lost on sidebar open).
  */
 function showAssessmentSidebar() {
-  var html = HtmlService.createTemplateFromFile('UI/Sidebar')
-    .evaluate()
-    .setTitle(CONFIG.SIDEBAR_TITLE);
+  var selectionData = getSelectedText();
+  Logger.log('Selection data: ' + JSON.stringify(selectionData));
 
+  var template = HtmlService.createTemplateFromFile('UI/Sidebar');
+  template.selectionData = selectionData ? JSON.stringify(selectionData) : 'null';
+  template.editData = 'null';
+
+  var html = template.evaluate().setTitle(CONFIG.SIDEBAR_TITLE);
+  DocumentApp.getUi().showSidebar(html);
+}
+
+/**
+ * Opens the sidebar pre-populated with an existing assessment for editing.
+ * @param {string} assessmentId - The UUID of the assessment to edit.
+ */
+function showEditSidebar(assessmentId) {
+  var assessment = getAssessmentById(assessmentId);
+  if (!assessment) {
+    DocumentApp.getUi().alert('Error', 'Assessment not found.', DocumentApp.getUi().ButtonSet.OK);
+    return;
+  }
+
+  var template = HtmlService.createTemplateFromFile('UI/Sidebar');
+  template.selectionData = JSON.stringify({
+    text: assessment.claimText,
+    paragraphIndex: assessment.location.paragraphIndex,
+    startOffset: assessment.location.startOffset,
+    endOffset: assessment.location.endOffset
+  });
+  template.editData = JSON.stringify(assessment);
+
+  var html = template.evaluate().setTitle('Edit Assessment');
   DocumentApp.getUi().showSidebar(html);
 }
 
@@ -50,7 +79,6 @@ function showManager() {
 }
 
 // Placeholder stubs for menu items not yet implemented.
-// These will be replaced in later sessions.
 
 function generateAppendix() {
   DocumentApp.getUi().alert('Appendix generation will be implemented in Session 4.');

@@ -6,33 +6,259 @@
 </head>
 <body>
   <h3 id="formTitle">Assess Evidence</h3>
-
   <div id="statusMsg" class="status-msg"></div>
 
-  <div class="claim-display" id="claimDisplay">
-    <em>Select text in the document, then open this sidebar.</em>
+  <!-- Claim display -->
+  <div class="section">
+    <label>Selected Claim</label>
+    <div class="claim-display" id="claimDisplay">
+      <em>No text selected.</em>
+    </div>
+    <div id="noSelectionError" class="error">
+      Please select text in the document before opening this sidebar.
+    </div>
   </div>
 
-  <p style="text-align: center; color: #888; font-size: 12px;">
-    Sidebar loaded successfully. Full assessment form coming in Session 2.
-  </p>
+  <!-- Evidence Quality -->
+  <div class="section">
+    <label>Evidence Quality</label>
+    <div class="radio-group">
+      <label><input type="radio" name="evidenceQuality" value="limited"> Limited</label>
+      <label><input type="radio" name="evidenceQuality" value="medium"> Medium</label>
+      <label><input type="radio" name="evidenceQuality" value="robust"> Robust</label>
+    </div>
+    <div id="evidenceQualityError" class="error">Please select an evidence quality level.</div>
+  </div>
 
+  <!-- Sources -->
+  <div class="section">
+    <label>Sources</label>
+    <textarea id="sources" placeholder="Enter source(s), one per line" rows="3"></textarea>
+  </div>
+
+  <!-- Evidence Notes -->
+  <div class="section">
+    <label>Evidence Notes <span style="font-weight:normal;color:#888;">(optional)</span></label>
+    <textarea id="evidenceNotes" placeholder="Notes on evidence quality..." rows="2"></textarea>
+  </div>
+
+  <!-- Agreement Level -->
+  <div class="section">
+    <label>Agreement Level</label>
+    <div class="radio-group">
+      <label><input type="radio" name="agreementLevel" value="low"> Low</label>
+      <label><input type="radio" name="agreementLevel" value="medium"> Medium</label>
+      <label><input type="radio" name="agreementLevel" value="high"> High</label>
+    </div>
+    <div id="agreementLevelError" class="error">Please select an agreement level.</div>
+  </div>
+
+  <!-- Agreement Notes -->
+  <div class="section">
+    <label>Agreement Notes <span style="font-weight:normal;color:#888;">(optional)</span></label>
+    <textarea id="agreementNotes" placeholder="Notes on level of agreement..." rows="2"></textarea>
+  </div>
+
+  <!-- Confidence Level -->
+  <div class="section">
+    <label>Overall Confidence</label>
+    <select id="confidenceLevel">
+      <option value="">-- Select --</option>
+      <option value="very-low">Very Low</option>
+      <option value="low">Low</option>
+      <option value="medium">Medium</option>
+      <option value="high">High</option>
+      <option value="very-high">Very High</option>
+    </select>
+    <div id="confidenceLevelError" class="error">Please select a confidence level.</div>
+  </div>
+
+  <!-- Conditional Statement -->
+  <div class="section">
+    <label>Conditional Statement <span style="font-weight:normal;color:#888;">(optional)</span></label>
+    <input type="text" id="conditional" placeholder="e.g., Assumes 80%+ participation rate">
+  </div>
+
+  <!-- Buttons -->
   <div class="btn-row">
-    <button class="btn btn-secondary" onclick="google.script.host.close()">Close</button>
+    <button class="btn btn-primary" id="saveBtn" onclick="handleSave()">Save</button>
+    <button class="btn btn-secondary" onclick="google.script.host.close()">Cancel</button>
   </div>
 
   <script>
-    // On load, fetch the selected text from the document
-    google.script.run
-      .withSuccessHandler(function(result) {
-        if (result && result.text) {
-          document.getElementById('claimDisplay').textContent = result.text;
+    // Data passed from server before sidebar opened
+    var selectionData = <?!= selectionData ?>;
+    var editData = <?!= editData ?>;
+
+    // Track whether we're in edit mode
+    var isEditMode = editData !== null;
+    var editId = isEditMode ? editData.id : null;
+
+    /**
+     * Initialize the form on load.
+     */
+    function init() {
+      if (isEditMode) {
+        populateEditForm();
+      } else if (selectionData && selectionData.text) {
+        document.getElementById('claimDisplay').textContent = selectionData.text;
+      } else {
+        showError('noSelectionError');
+        document.getElementById('saveBtn').disabled = true;
+      }
+    }
+
+    /**
+     * Pre-fill the form with existing assessment data for editing.
+     */
+    function populateEditForm() {
+      document.getElementById('formTitle').textContent = 'Edit Assessment';
+      document.getElementById('saveBtn').textContent = 'Update';
+      document.getElementById('claimDisplay').textContent = editData.claimText;
+
+      setRadio('evidenceQuality', editData.evidence.quality);
+      document.getElementById('sources').value = (editData.evidence.sources || []).join('\n');
+      document.getElementById('evidenceNotes').value = editData.evidence.notes || '';
+
+      setRadio('agreementLevel', editData.agreement.level);
+      document.getElementById('agreementNotes').value = editData.agreement.notes || '';
+
+      document.getElementById('confidenceLevel').value = editData.confidence.level;
+      document.getElementById('conditional').value = editData.confidence.conditional || '';
+    }
+
+    /**
+     * Sets a radio button group to a specific value.
+     */
+    function setRadio(name, value) {
+      var radios = document.getElementsByName(name);
+      for (var i = 0; i < radios.length; i++) {
+        if (radios[i].value === value) {
+          radios[i].checked = true;
+          break;
         }
-      })
-      .withFailureHandler(function(err) {
-        console.log('Could not get selection: ' + err.message);
-      })
-      .getSelectedText();
+      }
+    }
+
+    /**
+     * Gets the selected value from a radio button group.
+     */
+    function getRadio(name) {
+      var radios = document.getElementsByName(name);
+      for (var i = 0; i < radios.length; i++) {
+        if (radios[i].checked) return radios[i].value;
+      }
+      return '';
+    }
+
+    /**
+     * Collects form data, validates, and sends to server.
+     */
+    function handleSave() {
+      clearErrors();
+
+      var valid = true;
+
+      var evidenceQuality = getRadio('evidenceQuality');
+      if (!evidenceQuality) {
+        showError('evidenceQualityError');
+        valid = false;
+      }
+
+      var agreementLevel = getRadio('agreementLevel');
+      if (!agreementLevel) {
+        showError('agreementLevelError');
+        valid = false;
+      }
+
+      var confidenceLevel = document.getElementById('confidenceLevel').value;
+      if (!confidenceLevel) {
+        showError('confidenceLevelError');
+        valid = false;
+      }
+
+      if (!valid) return;
+
+      // Parse sources: one per line, trim empty lines
+      var sourcesRaw = document.getElementById('sources').value;
+      var sources = sourcesRaw.split('\n')
+        .map(function(s) { return s.trim(); })
+        .filter(function(s) { return s.length > 0; });
+
+      var formData = {
+        claimText: selectionData ? selectionData.text : editData.claimText,
+        location: selectionData ? {
+          paragraphIndex: selectionData.paragraphIndex,
+          startOffset: selectionData.startOffset,
+          endOffset: selectionData.endOffset
+        } : editData.location,
+        evidence: {
+          quality: evidenceQuality,
+          sources: sources,
+          notes: document.getElementById('evidenceNotes').value.trim()
+        },
+        agreement: {
+          level: agreementLevel,
+          notes: document.getElementById('agreementNotes').value.trim()
+        },
+        confidence: {
+          level: confidenceLevel,
+          conditional: document.getElementById('conditional').value.trim()
+        }
+      };
+
+      // Disable button while saving
+      document.getElementById('saveBtn').disabled = true;
+      document.getElementById('saveBtn').textContent = isEditMode ? 'Updating...' : 'Saving...';
+
+      if (isEditMode) {
+        google.script.run
+          .withSuccessHandler(onSaveSuccess)
+          .withFailureHandler(onSaveFailure)
+          .handleUpdateAssessment(editId, formData);
+      } else {
+        google.script.run
+          .withSuccessHandler(onSaveSuccess)
+          .withFailureHandler(onSaveFailure)
+          .handleCreateAssessment(formData);
+      }
+    }
+
+    function onSaveSuccess(result) {
+      if (result && result.success) {
+        showStatus('success', isEditMode ? 'Assessment updated!' : 'Assessment saved!');
+        setTimeout(function() { google.script.host.close(); }, 1200);
+      } else {
+        var msg = (result && result.error) ? result.error : 'Unknown error';
+        onSaveFailure({ message: msg });
+      }
+    }
+
+    function onSaveFailure(error) {
+      showStatus('error', 'Failed: ' + error.message);
+      document.getElementById('saveBtn').disabled = false;
+      document.getElementById('saveBtn').textContent = isEditMode ? 'Update' : 'Save';
+    }
+
+    function showError(elementId) {
+      document.getElementById(elementId).classList.add('visible');
+    }
+
+    function clearErrors() {
+      var errors = document.querySelectorAll('.error');
+      for (var i = 0; i < errors.length; i++) {
+        errors[i].classList.remove('visible');
+      }
+    }
+
+    function showStatus(type, message) {
+      var el = document.getElementById('statusMsg');
+      el.className = 'status-msg ' + type;
+      el.textContent = message;
+    }
+
+    // Run on load
+    init();
   </script>
 </body>
 </html>
