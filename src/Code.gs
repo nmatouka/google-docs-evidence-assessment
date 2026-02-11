@@ -78,12 +78,7 @@ function showManager() {
   DocumentApp.getUi().showModalDialog(html, CONFIG.MANAGER_TITLE);
 }
 
-// Placeholder stubs for menu items not yet implemented.
-
-function generateAppendix() {
-  DocumentApp.getUi().alert('Appendix generation will be implemented in Session 4.');
-}
-
+// Placeholder — will be replaced in Session 6.
 function syncMarkers() {
   DocumentApp.getUi().alert('Marker sync will be implemented in Session 6.');
 }
