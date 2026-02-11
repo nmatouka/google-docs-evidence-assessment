@@ -20,6 +20,23 @@ function generateAppendix() {
       return;
     }
 
+    // Quick integrity check — warn if markers are missing
+    var integrity = checkMarkerIntegrity();
+    if (!integrity.valid) {
+      var ui = DocumentApp.getUi();
+      var response = ui.alert(
+        'Missing Markers',
+        'Marker(s) ' + integrity.missingMarkers.join(', ') + ' not found in the document.\n\n'
+          + 'Would you like to run Sync Markers to fix this before generating the appendix?',
+        ui.ButtonSet.YES_NO
+      );
+      if (response === ui.Button.YES) {
+        renumberAllMarkers();
+        // Reload assessments after renumber
+        assessments = getAllAssessments();
+      }
+    }
+
     var doc = DocumentApp.getActiveDocument();
     var body = doc.getBody();
 

@@ -328,6 +328,9 @@ function handleDeleteAssessment(id) {
       return { success: false, error: 'Failed to delete assessment from storage.' };
     }
 
+    // Renumber remaining markers to keep them sequential
+    renumberAllMarkers();
+
     Logger.log('Assessment deleted: ' + id);
     return { success: true };
   }, 'Failed to delete assessment.');
@@ -344,4 +347,90 @@ function getAllAssessments() {
     return (a.markerNumber || 0) - (b.markerNumber || 0);
   });
   return assessments;
+}
+
+/**
+ * Renumbers all markers sequentially (1, 2, 3...) based on document order.
+ * Removes old markers from the document, reassigns numbers, and inserts new ones.
+ * @returns {Object} { total, updated, errors[] }
+ */
+function renumberAllMarkers() {
+  var assessments = loadAssessments();
+  var errors = [];
+  var updated = 0;
+
+  if (assessments.length === 0) {
+    return { total: 0, updated: 0, errors: [] };
+  }
+
+  // Sort by document position (paragraph index, then start offset)
+  assessments.sort(function(a, b) {
+    var locA = a.location || {};
+    var locB = b.location || {};
+    if ((locA.paragraphIndex || 0) !== (locB.paragraphIndex || 0)) {
+      return (locA.paragraphIndex || 0) - (locB.paragraphIndex || 0);
+    }
+    return (locA.startOffset || 0) - (locB.startOffset || 0);
+  });
+
+  // First pass: remove all existing markers from the document
+  for (var i = 0; i < assessments.length; i++) {
+    var oldNumber = assessments[i].markerNumber;
+    if (oldNumber) {
+      removeMarker(oldNumber);
+    }
+  }
+
+  // Second pass: assign new sequential numbers and insert markers
+  for (var j = 0; j < assessments.length; j++) {
+    var newNumber = j + 1;
+    var oldNum = assessments[j].markerNumber;
+
+    if (oldNum !== newNumber) {
+      updated++;
+    }
+
+    assessments[j].markerNumber = newNumber;
+    assessments[j].metadata = assessments[j].metadata || {};
+    assessments[j].metadata.lastModified = nowISO();
+
+    // Insert the new marker
+    var inserted = insertMarker(newNumber, assessments[j].location);
+    if (!inserted) {
+      errors.push('Could not insert marker ' + newNumber + ' for "' +
+        assessments[j].claimText.substring(0, 40) + '..."');
+    }
+  }
+
+  // Save updated assessments
+  saveAssessments(assessments);
+
+  Logger.log('Renumber complete: ' + assessments.length + ' assessments, ' + updated + ' renumbered, ' + errors.length + ' errors.');
+  return { total: assessments.length, updated: updated, errors: errors };
+}
+
+/**
+ * Checks document integrity: finds orphaned markers and missing markers.
+ * Called before appendix generation for a quick sanity check.
+ * @returns {Object} { valid, orphanedMarkers[], missingMarkers[] }
+ */
+function checkMarkerIntegrity() {
+  var assessments = loadAssessments();
+  var doc = DocumentApp.getActiveDocument();
+  var body = doc.getBody();
+  var missingMarkers = [];
+
+  // Check each assessment's marker exists in the document
+  for (var i = 0; i < assessments.length; i++) {
+    var markerText = toSuperscript(assessments[i].markerNumber);
+    var found = body.findText(markerText);
+    if (!found) {
+      missingMarkers.push(assessments[i].markerNumber);
+    }
+  }
+
+  return {
+    valid: missingMarkers.length === 0,
+    missingMarkers: missingMarkers
+  };
 }

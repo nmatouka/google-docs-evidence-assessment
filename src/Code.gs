@@ -78,7 +78,34 @@ function showManager() {
   DocumentApp.getUi().showModalDialog(html, CONFIG.MANAGER_TITLE);
 }
 
-// Placeholder — will be replaced in Session 6.
+/**
+ * Syncs markers in the document with stored assessments.
+ * Renumbers markers sequentially and reports any issues.
+ */
 function syncMarkers() {
-  DocumentApp.getUi().alert('Marker sync will be implemented in Session 6.');
+  return safeExecute(function() {
+    var result = renumberAllMarkers();
+    var ui = DocumentApp.getUi();
+
+    if (result.errors.length > 0) {
+      ui.alert(
+        'Sync Complete (with issues)',
+        'Renumbered ' + result.updated + ' marker(s).\n\n'
+          + 'Issues found:\n' + result.errors.join('\n'),
+        ui.ButtonSet.OK
+      );
+    } else if (result.updated > 0) {
+      ui.alert(
+        'Markers Synced',
+        'Successfully renumbered ' + result.updated + ' marker(s).',
+        ui.ButtonSet.OK
+      );
+    } else {
+      ui.alert(
+        'Markers OK',
+        'All ' + result.total + ' marker(s) are already in order.',
+        ui.ButtonSet.OK
+      );
+    }
+  }, 'Failed to sync markers.');
 }
