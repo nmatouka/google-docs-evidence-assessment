@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+
+# Claude Code local settings
+.claude/
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Node (if clasp or tooling is added later)
+node_modules/
+.clasp.json
