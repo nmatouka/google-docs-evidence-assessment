@@ -325,11 +325,44 @@ function handleDeleteAssessment(id) {
  * @returns {Object[]} Sorted assessment array.
  */
 function getAllAssessments() {
-  var assessments = loadAssessments();
-  assessments.sort(function(a, b) {
-    return (a.markerNumber || 0) - (b.markerNumber || 0);
-  });
-  return assessments;
+  return safeExecute(function() {
+    var assessments = loadAssessments();
+    assessments.sort(function(a, b) {
+      return (a.markerNumber || 0) - (b.markerNumber || 0);
+    });
+    return assessments;
+  }, 'Failed to load assessments.') || [];
+}
+
+/**
+ * Scrolls the document cursor to the marker location for a given assessment.
+ * Called from the manager dialog's "Jump to Claim" action.
+ * @param {string} assessmentId - The assessment UUID.
+ * @returns {Object} { success: boolean, error: string }
+ */
+function jumpToAssessmentMarker(assessmentId) {
+  return safeExecute(function() {
+    var assessment = getAssessmentById(assessmentId);
+    if (!assessment) {
+      return { success: false, error: 'Assessment not found.' };
+    }
+
+    var doc = DocumentApp.getActiveDocument();
+    var body = doc.getBody();
+    var markerText = toSuperscript(assessment.markerNumber);
+
+    var found = body.findText(markerText);
+    if (!found) {
+      return { success: false, error: 'Marker not found in document. Try Sync Markers.' };
+    }
+
+    var element = found.getElement();
+    var offset = found.getStartOffset();
+    var position = doc.newPosition(element, offset);
+    doc.setCursorPosition(position);
+
+    return { success: true };
+  }, 'Failed to jump to marker.');
 }
 
 /**

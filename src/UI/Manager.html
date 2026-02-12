@@ -55,6 +55,12 @@
       color: #333;
       margin-bottom: 6px;
       line-height: 1.4;
+      cursor: pointer;
+    }
+
+    .card-claim:hover {
+      color: #1a73e8;
+      text-decoration: underline;
     }
 
     .card-meta {
@@ -117,7 +123,10 @@
   </div>
 
   <div class="manager-footer">
-    <button class="btn btn-primary" onclick="regenerateAppendix()" style="flex:none;padding:6px 14px;">
+    <button class="btn btn-secondary" id="exportBtn" style="flex:none;padding:6px 14px;">
+      Export
+    </button>
+    <button class="btn btn-primary" id="appendixBtn" style="flex:none;padding:6px 14px;">
       Regenerate Appendix
     </button>
     <button class="btn btn-secondary" onclick="google.script.host.close()" style="flex:none;padding:6px 14px;">
@@ -129,6 +138,10 @@
     var assessments = [];
 
     function init() {
+      // Set up footer button handlers
+      document.getElementById('appendixBtn').addEventListener('click', regenerateAppendix);
+      document.getElementById('exportBtn').addEventListener('click', showExportMenu);
+
       google.script.run
         .withSuccessHandler(renderAssessments)
         .withFailureHandler(function(err) {
@@ -158,29 +171,72 @@
         var sourceCount = (a.evidence.sources && a.evidence.sources.length) || 0;
         var qualityLabel = capitalize(a.evidence.quality);
 
-        html += '<div class="assessment-card" id="card-' + a.id + '">'
+        html += '<div class="assessment-card" id="card-' + escapeAttr(a.id) + '" data-id="' + escapeAttr(a.id) + '" data-marker="' + a.markerNumber + '">'
           + '<div class="card-header">'
           + '<span class="card-marker">' + a.markerNumber + '</span>'
           + '<span class="card-confidence ' + confClass + '">' + confLabel + '</span>'
           + '</div>'
-          + '<div class="card-claim">' + escapeHtml(claimPreview) + '</div>'
+          + '<div class="card-claim" data-action="jump" title="Click to jump to this claim in the document">' + escapeHtml(claimPreview) + '</div>'
           + '<div class="card-meta">'
           + qualityLabel + ' evidence &middot; '
           + sourceCount + ' source' + (sourceCount !== 1 ? 's' : '')
           + '</div>'
           + '<div class="card-actions">'
-          + '<button onclick="editAssessment(\'' + a.id + '\')">Edit</button>'
-          + '<button class="btn-delete" onclick="confirmDelete(\'' + a.id + '\', ' + a.markerNumber + ')">Delete</button>'
+          + '<button data-action="edit">Edit</button>'
+          + '<button class="btn-delete" data-action="delete">Delete</button>'
           + '</div>'
           + '</div>';
       }
 
       container.innerHTML = html;
+
+      // Event delegation: handle all card button clicks from the container
+      container.addEventListener('click', handleCardAction);
+    }
+
+    /**
+     * Delegates click events from assessment cards to the appropriate handler.
+     */
+    function handleCardAction(e) {
+      var target = e.target;
+      var action = target.getAttribute('data-action');
+      if (!action) return;
+
+      var card = target.closest('.assessment-card');
+      if (!card) return;
+
+      var id = card.getAttribute('data-id');
+      var marker = parseInt(card.getAttribute('data-marker'), 10);
+
+      switch (action) {
+        case 'edit':
+          editAssessment(id);
+          break;
+        case 'delete':
+          confirmDelete(id, marker);
+          break;
+        case 'jump':
+          jumpToClaim(id);
+          break;
+      }
     }
 
     function editAssessment(id) {
       google.script.host.close();
       google.script.run.showEditSidebar(id);
+    }
+
+    function jumpToClaim(id) {
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && !result.success) {
+            showStatus('error', result.error || 'Could not jump to claim.');
+          }
+        })
+        .withFailureHandler(function(err) {
+          showStatus('error', 'Jump failed: ' + err.message);
+        })
+        .jumpToAssessmentMarker(id);
     }
 
     function confirmDelete(id, markerNumber) {
@@ -192,10 +248,8 @@
         .withSuccessHandler(function(result) {
           if (result && result.success) {
             showStatus('success', 'Assessment deleted.');
-            // Remove the card from the list
             var card = document.getElementById('card-' + id);
             if (card) card.remove();
-            // Check if list is now empty
             var remaining = document.querySelectorAll('.assessment-card');
             if (remaining.length === 0) {
               document.getElementById('assessmentList').innerHTML =
@@ -212,8 +266,40 @@
     }
 
     function regenerateAppendix() {
+      if (!confirm('Regenerate the appendix? This will overwrite the existing appendix section.')) {
+        return;
+      }
       google.script.host.close();
       google.script.run.generateAppendix();
+    }
+
+    function showExportMenu() {
+      if (assessments.length === 0) {
+        showStatus('error', 'No assessments to export.');
+        return;
+      }
+
+      var format = prompt('Export format: type "csv" or "json"', 'csv');
+      if (!format) return;
+      format = format.trim().toLowerCase();
+
+      if (format !== 'csv' && format !== 'json') {
+        showStatus('error', 'Invalid format. Use "csv" or "json".');
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success) {
+            showStatus('success', 'Export created! Check your Google Drive for "' + result.fileName + '".');
+          } else {
+            showStatus('error', (result && result.error) || 'Export failed.');
+          }
+        })
+        .withFailureHandler(function(err) {
+          showStatus('error', 'Export failed: ' + err.message);
+        })
+        .handleExport(format);
     }
 
     function formatConfidence(level) {
@@ -235,6 +321,10 @@
       var div = document.createElement('div');
       div.textContent = text;
       return div.innerHTML;
+    }
+
+    function escapeAttr(text) {
+      return String(text).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
     function showStatus(type, message) {

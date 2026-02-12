@@ -3,7 +3,7 @@
  */
 
 var CONFIG = {
-  VERSION: '1.0.0',
+  VERSION: '1.1.0',
 
   // DocumentProperties keys
   STORAGE_KEY: 'evidenceAssessments',

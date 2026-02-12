@@ -5,6 +5,22 @@
   "runtimeVersion": "V8",
   "oauthScopes": [
     "https://www.googleapis.com/auth/documents.currentonly",
-    "https://www.googleapis.com/auth/script.container.ui"
-  ]
+    "https://www.googleapis.com/auth/script.container.ui",
+    "https://www.googleapis.com/auth/drive.file"
+  ],
+  "addOns": {
+    "common": {
+      "name": "Evidence Assessment",
+      "logoUrl": "PLACEHOLDER_ICON_URL",
+      "homepageTrigger": {
+        "runFunction": "onHomepage",
+        "enabled": false
+      }
+    },
+    "docs": {
+      "onFileScopeGrantedTrigger": {
+        "runFunction": "onOpen"
+      }
+    }
+  }
 }

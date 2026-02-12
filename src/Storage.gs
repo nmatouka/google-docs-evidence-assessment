@@ -48,7 +48,16 @@ function saveAssessments(assessments) {
 
   // Warn if approaching the 500KB storage limit
   var sizeKB = json.length / 1024;
-  if (sizeKB > 450) {
+  if (sizeKB > 480) {
+    try {
+      DocumentApp.getUi().alert(
+        'Storage Almost Full',
+        'Assessment data is ' + sizeKB.toFixed(0) + 'KB of the 500KB limit. '
+          + 'Consider exporting and removing old assessments.',
+        DocumentApp.getUi().ButtonSet.OK
+      );
+    } catch (e) { /* UI not available */ }
+  } else if (sizeKB > 400) {
     Logger.log('WARNING: Assessment data is ' + sizeKB.toFixed(1) + 'KB (limit: 500KB)');
   }
 

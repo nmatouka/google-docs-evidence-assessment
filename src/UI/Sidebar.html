@@ -14,8 +14,16 @@
     <div class="claim-display" id="claimDisplay">
       <em>No text selected.</em>
     </div>
+    <div id="captureRow" style="display:none;margin-top:6px;">
+      <button class="btn btn-secondary" id="captureBtn" style="width:100%;font-size:12px;padding:6px;" onclick="handleCaptureSelection()">
+        Capture Selection
+      </button>
+      <div style="font-size:11px;color:#888;margin-top:4px;">
+        Highlight text in the document, then click the button above.
+      </div>
+    </div>
     <div id="noSelectionError" class="error">
-      Please select text in the document before opening this sidebar.
+      Could not detect selected text. Highlight a claim in the document, then click "Capture Selection".
     </div>
   </div>
 
@@ -71,6 +79,7 @@
       <option value="very-high">Very High</option>
     </select>
     <div id="confidenceLevelError" class="error">Please select a confidence level.</div>
+    <div id="confidenceHint" class="confidence-hint"></div>
   </div>
 
   <!-- Conditional Statement -->
@@ -103,9 +112,42 @@
       } else if (selectionData && selectionData.text) {
         document.getElementById('claimDisplay').textContent = selectionData.text;
       } else {
-        showError('noSelectionError');
+        // No selection captured at open time (common with createAddonMenu).
+        // Show the capture button so the user can select text then click it.
+        document.getElementById('captureRow').style.display = 'block';
         document.getElementById('saveBtn').disabled = true;
       }
+    }
+
+    /**
+     * Captures the current document selection via a server call.
+     * Called when the user clicks "Capture Selection" after highlighting text.
+     */
+    function handleCaptureSelection() {
+      var btn = document.getElementById('captureBtn');
+      btn.disabled = true;
+      btn.textContent = 'Capturing...';
+      clearErrors();
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.text) {
+            selectionData = result;
+            document.getElementById('claimDisplay').textContent = result.text;
+            document.getElementById('captureRow').style.display = 'none';
+            document.getElementById('saveBtn').disabled = false;
+          } else {
+            showError('noSelectionError');
+            btn.disabled = false;
+            btn.textContent = 'Capture Selection';
+          }
+        })
+        .withFailureHandler(function(err) {
+          showStatus('error', 'Capture failed: ' + err.message);
+          btn.disabled = false;
+          btn.textContent = 'Capture Selection';
+        })
+        .captureSelection();
     }
 
     /**
@@ -261,6 +303,63 @@
       el.className = 'status-msg ' + type;
       el.textContent = message;
     }
+
+    /**
+     * IPCC-style expected confidence based on evidence quality + agreement level.
+     * Maps "evidence-agreement" to an expected confidence range.
+     */
+    var EXPECTED_CONFIDENCE = {
+      'robust-high':   ['high', 'very-high'],
+      'robust-medium': ['medium', 'high'],
+      'robust-low':    ['low', 'medium'],
+      'medium-high':   ['medium', 'high'],
+      'medium-medium': ['medium'],
+      'medium-low':    ['low', 'medium'],
+      'limited-high':  ['low', 'medium'],
+      'limited-medium':['low'],
+      'limited-low':   ['very-low', 'low']
+    };
+
+    /**
+     * Checks if the selected confidence level is consistent with evidence + agreement.
+     * Shows a non-blocking hint if there's a mismatch.
+     */
+    function checkConfidenceConsistency() {
+      var evidence = getRadio('evidenceQuality');
+      var agreement = getRadio('agreementLevel');
+      var confidence = document.getElementById('confidenceLevel').value;
+      var hintEl = document.getElementById('confidenceHint');
+
+      if (!evidence || !agreement || !confidence) {
+        hintEl.style.display = 'none';
+        return;
+      }
+
+      var key = evidence + '-' + agreement;
+      var expected = EXPECTED_CONFIDENCE[key];
+
+      if (expected && expected.indexOf(confidence) === -1) {
+        var labels = { 'very-low': 'Very Low', 'low': 'Low', 'medium': 'Medium', 'high': 'High', 'very-high': 'Very High' };
+        var expectedLabels = expected.map(function(l) { return labels[l]; }).join(' or ');
+        hintEl.textContent = 'Note: With ' + evidence + ' evidence and ' + agreement + ' agreement, '
+          + 'IPCC guidance suggests ' + expectedLabels + ' confidence. '
+          + 'Your selection is valid if you have a reason to diverge.';
+        hintEl.style.display = 'block';
+      } else {
+        hintEl.style.display = 'none';
+      }
+    }
+
+    // Wire up consistency check on relevant field changes
+    var qualityRadios = document.getElementsByName('evidenceQuality');
+    var agreementRadios = document.getElementsByName('agreementLevel');
+    for (var r = 0; r < qualityRadios.length; r++) {
+      qualityRadios[r].addEventListener('change', checkConfidenceConsistency);
+    }
+    for (var r2 = 0; r2 < agreementRadios.length; r2++) {
+      agreementRadios[r2].addEventListener('change', checkConfidenceConsistency);
+    }
+    document.getElementById('confidenceLevel').addEventListener('change', checkConfidenceConsistency);
 
     // Run on load
     init();
