@@ -56,4 +56,4 @@ If this privacy policy is updated, the changes will be posted here with an updat
 
 ## Contact
 
-If you have questions about this privacy policy or the add-on's data practices, please open an issue at: https://github.com/neilmatouka/google-docs-evidence-assessment/issues
+If you have questions about this privacy policy or the add-on's data practices, please open an issue at: https://github.com/nmatouka/google-docs-evidence-assessment/issues

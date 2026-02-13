@@ -20,7 +20,7 @@ The Add-on stores all data within your Google Doc using DocumentProperties. No d
 
 ## Intellectual Property
 
-The Add-on is open source software. The source code is available at: https://github.com/neilmatouka/google-docs-evidence-assessment
+The Add-on is open source software. The source code is available at: https://github.com/nmatouka/google-docs-evidence-assessment
 
 ## Disclaimer of Warranties
 
@@ -53,4 +53,4 @@ You may stop using the Add-on at any time by uninstalling it from your Google Wo
 
 ## Contact
 
-If you have questions about these terms, please open an issue at: https://github.com/neilmatouka/google-docs-evidence-assessment/issues
+If you have questions about these terms, please open an issue at: https://github.com/nmatouka/google-docs-evidence-assessment/issues
