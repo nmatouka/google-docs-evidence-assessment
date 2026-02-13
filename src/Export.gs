@@ -30,7 +30,27 @@ function handleExport(format) {
       mimeType = 'text/csv';
     }
 
-    DriveApp.createFile(fileName, content, mimeType);
+    // Use Drive REST API v3 instead of DriveApp.createFile() because
+    // DriveApp requires the full 'drive' scope, while the REST API
+    // works with the narrower 'drive.file' scope.
+    var metadata = JSON.stringify({ name: fileName, mimeType: mimeType });
+    var boundary = 'evidence_export_boundary';
+    var body = '--' + boundary + '\r\n' +
+      'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+      metadata + '\r\n' +
+      '--' + boundary + '\r\n' +
+      'Content-Type: ' + mimeType + '\r\n\r\n' +
+      content + '\r\n' +
+      '--' + boundary + '--';
+
+    UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+      method: 'post',
+      contentType: 'multipart/related; boundary=' + boundary,
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+      payload: body,
+      muteHttpExceptions: false
+    });
+
     Logger.log('Exported ' + assessments.length + ' assessments to ' + fileName);
 
     return { success: true, fileName: fileName };

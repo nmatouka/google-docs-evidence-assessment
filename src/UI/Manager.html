@@ -123,9 +123,6 @@
   </div>
 
   <div class="manager-footer">
-    <button class="btn btn-secondary" id="exportBtn" style="flex:none;padding:6px 14px;">
-      Export
-    </button>
     <button class="btn btn-primary" id="appendixBtn" style="flex:none;padding:6px 14px;">
       Regenerate Appendix
     </button>
@@ -140,7 +137,6 @@
     function init() {
       // Set up footer button handlers
       document.getElementById('appendixBtn').addEventListener('click', regenerateAppendix);
-      document.getElementById('exportBtn').addEventListener('click', showExportMenu);
 
       google.script.run
         .withSuccessHandler(renderAssessments)
@@ -271,35 +267,6 @@
       }
       google.script.host.close();
       google.script.run.generateAppendix();
-    }
-
-    function showExportMenu() {
-      if (assessments.length === 0) {
-        showStatus('error', 'No assessments to export.');
-        return;
-      }
-
-      var format = prompt('Export format: type "csv" or "json"', 'csv');
-      if (!format) return;
-      format = format.trim().toLowerCase();
-
-      if (format !== 'csv' && format !== 'json') {
-        showStatus('error', 'Invalid format. Use "csv" or "json".');
-        return;
-      }
-
-      google.script.run
-        .withSuccessHandler(function(result) {
-          if (result && result.success) {
-            showStatus('success', 'Export created! Check your Google Drive for "' + result.fileName + '".');
-          } else {
-            showStatus('error', (result && result.error) || 'Export failed.');
-          }
-        })
-        .withFailureHandler(function(err) {
-          showStatus('error', 'Export failed: ' + err.message);
-        })
-        .handleExport(format);
     }
 
     function formatConfidence(level) {

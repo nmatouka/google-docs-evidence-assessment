@@ -284,9 +284,10 @@
 
     function showError(elementId) {
       var el = document.getElementById(elementId);
+      // Scroll to this error if it's the first one shown
+      var isFirstError = !document.querySelector('.error.visible');
       el.classList.add('visible');
-      // Scroll the first visible error into view
-      if (!document.querySelector('.error.visible')) {
+      if (isFirstError) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     }
