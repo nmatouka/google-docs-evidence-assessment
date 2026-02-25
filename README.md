@@ -5,22 +5,21 @@ A Google Docs add-on for systematic IPCC-style uncertainty communication in poli
 ## Features
 
 - **Assess claims** — Select text, rate evidence quality (limited/medium/robust), agreement level (low/medium/high), and overall confidence (very low to very high)
-- **Superscript markers** — Numbered markers are inserted at each assessed claim, linking to the appendix
+- **Two citation styles** — Switch between superscript number markers (¹) or inline IPCC parenthetical markers *(high confidence)*
+- **Parenthetical options** — Choose detail level (confidence only, evidence + agreement, or full) and bracket style (parentheses or curly braces per AR6 convention)
 - **Evidence appendix** — Auto-generated, formatted appendix with all assessments, color-coded by confidence
 - **IPCC consistency hints** — Non-blocking guidance when your confidence rating diverges from what evidence + agreement would suggest
 - **Manage assessments** — View, edit, delete, and jump to any assessment from a management dialog
-- **Export** — Save assessments as CSV or JSON to Google Drive
 - **Marker sync** — Automatic renumbering when assessments are added or removed
 
 ## Quick Start
 
 1. Open a Google Doc and install the add-on
-2. Go to **Extensions > Evidence Assessment > Assess Selected Text**
-3. Highlight a claim in the document
-4. Click **Capture Selection** in the sidebar
-5. Fill in the assessment form and click **Save**
-6. Repeat for additional claims
-7. Go to **Extensions > Evidence Assessment > Generate Appendix** to create the summary
+2. Highlight a claim in the document
+3. Click **Evidence Assessment → Assess Selected Text**
+4. Fill in the assessment form and click **Save**
+5. Repeat for additional claims
+6. Click **Evidence Assessment → Generate Appendix** to create the summary
 
 ## Menu Items
 
@@ -29,8 +28,8 @@ A Google Docs add-on for systematic IPCC-style uncertainty communication in poli
 | Assess Selected Text | Open the assessment sidebar |
 | Manage Assessments | View, edit, delete, or jump to assessments |
 | Generate Appendix | Create or update the evidence appendix |
-| Export Assessments | Save assessments as CSV or JSON |
 | Sync Markers | Renumber markers if they get out of order |
+| Citation Style | Switch between superscript and IPCC parenthetical markers |
 | Help | Quick-reference guide |
 
 ## Project Structure
@@ -38,15 +37,16 @@ A Google Docs add-on for systematic IPCC-style uncertainty communication in poli
 ```
 src/
 ├── Code.gs              # Entry point, menu, sidebar/dialog launchers
-├── Assessment.gs        # Assessment CRUD, markers, renumbering
+├── Assessment.gs        # Assessment CRUD, markers, renumbering, style conversion
 ├── Appendix.gs          # Appendix generation and formatting
-├── Export.gs            # CSV/JSON export to Google Drive
+├── Export.gs            # CSV/JSON export (disabled pending scope fix)
 ├── Storage.gs           # DocumentProperties persistence layer
 ├── Utils.gs             # Helpers (UUID, error wrapper, superscript)
-├── Config.gs            # Constants, enums, version
+├── Config.gs            # Constants, enums, citation style defaults
 ├── UI/
-│   ├── Sidebar.html     # Assessment form with capture selection
+│   ├── Sidebar.html     # Assessment form
 │   ├── Manager.html     # Assessment list and management dialog
+│   ├── CitationStyle.html # Citation style settings dialog
 │   └── Styles.html      # Shared CSS
 └── appsscript.json      # Apps Script manifest
 ```
@@ -71,7 +71,7 @@ Assessments are stored as JSON in DocumentProperties (no external servers). Each
 2. Go to **Extensions > Apps Script**
 3. Copy each file from `src/` into the Apps Script editor (maintaining the `UI/` folder for HTML files)
 4. Save and reload the Google Doc
-5. The **Evidence Assessment** menu appears under **Extensions**
+5. The **Evidence Assessment** menu appears in the menu bar
 
 ### For distribution
 
@@ -83,7 +83,7 @@ See the [Google Workspace Marketplace](https://developers.google.com/workspace/m
 |-------|---------|
 | `documents.currentonly` | Read/write the current document |
 | `script.container.ui` | Display sidebar and dialogs |
-| `drive.file` | Create export files in Google Drive |
+| `drive.file` | Create export files in Google Drive (reserved for future use) |
 
 ## License
 

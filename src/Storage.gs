@@ -173,6 +173,32 @@ function getNextMarkerNumber() {
 }
 
 /**
+ * Loads the per-document config (citation style settings).
+ * Falls back to DEFAULT_DOC_CONFIG if no config has been saved.
+ * @returns {Object} Config object with citationStyle, parentheticalDetail, parentheticalBracket.
+ */
+function loadDocConfig() {
+  var props = PropertiesService.getDocumentProperties();
+  var raw = props.getProperty(CONFIG.CONFIG_KEY);
+  var defaults = JSON.parse(JSON.stringify(DEFAULT_DOC_CONFIG));
+  if (!raw) return defaults;
+  try {
+    return mergeObjects(defaults, JSON.parse(raw));
+  } catch (e) {
+    Logger.log('WARNING: Failed to parse doc config, using defaults: ' + e.message);
+    return defaults;
+  }
+}
+
+/**
+ * Saves the per-document config to DocumentProperties.
+ * @param {Object} config - Config object to persist.
+ */
+function saveDocConfig(config) {
+  PropertiesService.getDocumentProperties().setProperty(CONFIG.CONFIG_KEY, JSON.stringify(config));
+}
+
+/**
  * Shallow-merges two plain objects. Values from source overwrite target.
  * @param {Object} target
  * @param {Object} source

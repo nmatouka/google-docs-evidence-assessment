@@ -3,7 +3,7 @@
  */
 
 var CONFIG = {
-  VERSION: '1.1.0',
+  VERSION: '1.2.0',
 
   // DocumentProperties keys
   STORAGE_KEY: 'evidenceAssessments',
@@ -78,4 +78,30 @@ var SUPERSCRIPT_DIGITS = {
   '7': '\u2077',
   '8': '\u2078',
   '9': '\u2079'
+};
+
+// Citation style modes
+var CITATION_STYLE = {
+  SUPERSCRIPT: 'superscript',
+  PARENTHETICAL: 'parenthetical'
+};
+
+// Parenthetical detail level options
+var PARENTHETICAL_DETAIL = {
+  CONFIDENCE: 'confidence',              // e.g. "(high confidence)"
+  EVIDENCE_AGREEMENT: 'evidence-agreement', // e.g. "(robust evidence, high agreement)"
+  FULL: 'full'                           // e.g. "(robust evidence, high agreement, high confidence)"
+};
+
+// Parenthetical bracket style options
+var PARENTHETICAL_BRACKET = {
+  PARENTHESES: 'parentheses',  // (high confidence)
+  CURLY: 'curly'               // {high confidence}
+};
+
+// Default per-document config
+var DEFAULT_DOC_CONFIG = {
+  citationStyle: 'superscript',
+  parentheticalDetail: 'confidence',
+  parentheticalBracket: 'parentheses'
 };

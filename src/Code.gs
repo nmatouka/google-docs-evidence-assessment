@@ -15,6 +15,7 @@ function onOpen(e) {
     .addItem('Generate Appendix', 'generateAppendix')
     .addSeparator()
     .addItem('Sync Markers', 'syncMarkers')
+    .addItem('Citation Style', 'showCitationStyleDialog')
     .addSeparator()
     .addItem('Help', 'showHelp')
     .addToUi();
@@ -123,6 +124,18 @@ function syncMarkers() {
       );
     }
   }, 'Failed to sync markers.');
+}
+
+/**
+ * Opens the Citation Style settings dialog.
+ * Lets users switch between superscript and IPCC parenthetical marker modes.
+ */
+function showCitationStyleDialog() {
+  var config = loadDocConfig();
+  var template = HtmlService.createTemplateFromFile('UI/CitationStyle');
+  template.currentConfig = JSON.stringify(config);
+  var html = template.evaluate().setWidth(440).setHeight(360);
+  DocumentApp.getUi().showModalDialog(html, 'Citation Style');
 }
 
 /**
