@@ -36,6 +36,18 @@ const CONFIG = {
 
   MAX_SOURCES: 20,
 
+  // Climateshed API. Points at the dev server during development. For release,
+  // switch to https://api.climateshed.app and keep urlFetchWhitelist in
+  // appsscript.json in step.
+  API_BASE_URL: 'https://ca-climate-api-dev.fly.dev',
+  ACCOUNT_URL: 'https://climateshed.app/account',
+  PAID_TIERS: ['starter', 'pro'],
+  EVIDENCE_RESULT_LIMIT: 8,
+
+  // UserProperties keys: private to each Google user, never stored in the document.
+  TOKEN_PROPERTY: 'climateshedToken',
+  EMAIL_PROPERTY: 'climateshedEmail',
+
   // Appendix
   APPENDIX_TITLE: 'Evidence Assessment Appendix',
 
@@ -93,6 +105,13 @@ const CONFIDENCE_LEVEL_LABELS = {
 
 // Structured source fields. Only title is required.
 const SOURCE_FIELDS = ['title', 'publisher', 'year', 'page', 'url'];
+
+// Where a source came from, so the record shows which sources the author
+// added from a Climateshed search.
+const SOURCE_ORIGIN = {
+  AUTHOR: 'author',
+  CLIMATESHED: 'climateshed'
+};
 
 // Superscript Unicode digits for markers (0-9)
 const SUPERSCRIPT_DIGITS = {

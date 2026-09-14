@@ -6,7 +6,12 @@
   "oauthScopes": [
     "https://www.googleapis.com/auth/documents.currentonly",
     "https://www.googleapis.com/auth/script.container.ui",
+    "https://www.googleapis.com/auth/script.external_request",
     "https://www.googleapis.com/auth/userinfo.email"
+  ],
+  "urlFetchWhitelist": [
+    "https://ca-climate-api-dev.fly.dev/",
+    "https://api.climateshed.app/"
   ],
   "addOns": {
     "common": {

@@ -1,7 +1,8 @@
 /**
  * Sources.gs — Validation and citation formatting for structured sources.
  *
- * A source is { title, publisher, year, page, url }. Only title is required.
+ * A source is { title, publisher, year, page, url, origin }. Only title is
+ * required; origin is 'author' or 'climateshed'.
  */
 
 /**
@@ -32,6 +33,8 @@ function normalizeSources(rawSources) {
     if (isBlank) {
       return;
     }
+
+    source.origin = raw.origin === SOURCE_ORIGIN.CLIMATESHED ? SOURCE_ORIGIN.CLIMATESHED : SOURCE_ORIGIN.AUTHOR;
 
     var label = 'Source ' + (sources.length + 1);
     if (!source.title) {

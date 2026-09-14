@@ -25,6 +25,9 @@
     </div>
   </div>
 
+  <!-- Evidence from Climateshed: suggestions only, never filled in automatically -->
+  <?!= include('EvidencePanel') ?>
+
   <!-- Evidence Quality -->
   <div class="section">
     <label>Evidence Quality</label>
@@ -120,14 +123,17 @@
     function init() {
       if (isEditMode) {
         populateEditForm();
+        startEvidencePanel(editData.claimText);
       } else if (selectionData && selectionData.text) {
         document.getElementById('claimDisplay').textContent = selectionData.text;
         addSourceCard(null);
+        startEvidencePanel(selectionData.text);
       } else {
         // No selection when the sidebar opened: let the author select text, then capture it.
         document.getElementById('captureRow').style.display = 'block';
         document.getElementById('saveBtn').disabled = true;
         addSourceCard(null);
+        startEvidencePanel(null);
       }
     }
 
@@ -146,6 +152,7 @@
             selectionData = result;
             document.getElementById('claimDisplay').textContent = result.text;
             document.getElementById('captureRow').style.display = 'none';
+            startEvidencePanel(result.text);
             document.getElementById('saveBtn').disabled = false;
           } else {
             showError('noSelectionError');
@@ -198,6 +205,7 @@
 
       var card = document.createElement('div');
       card.className = 'source-card';
+      card.setAttribute('data-origin', source && source.origin === 'climateshed' ? 'climateshed' : 'author');
 
       var header = document.createElement('div');
       header.className = 'source-card-header';
@@ -260,7 +268,9 @@
     function updateSourceCards() {
       var cards = document.querySelectorAll('#sourceList .source-card');
       for (var i = 0; i < cards.length; i++) {
-        cards[i].querySelector('.source-card-number').textContent = 'Source ' + (i + 1);
+        var fromClimateshed = cards[i].getAttribute('data-origin') === 'climateshed';
+        cards[i].querySelector('.source-card-number').textContent =
+          'Source ' + (i + 1) + (fromClimateshed ? ' (from Climateshed)' : '');
       }
       document.getElementById('addSourceBtn').disabled = cards.length >= MAX_SOURCES;
     }
@@ -282,6 +292,7 @@
 
         var isBlank = SOURCE_FIELD_DEFS.every(function(field) { return !source[field.name]; });
         if (isBlank) continue;
+        source.origin = cards[i].getAttribute('data-origin') || 'author';
 
         var message = validateSource(source);
         if (message) {

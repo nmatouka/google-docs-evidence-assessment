@@ -1,0 +1,373 @@
+<!--
+  Evidence from Climateshed. Included into Sidebar.html.
+  Suggestions only: nothing reaches the assessment unless the author clicks
+  "Add as source". All text from the server is inserted with textContent.
+-->
+<div class="section evidence-panel" id="evidencePanel">
+  <label>Evidence from Climateshed</label>
+  <div id="evidenceBody" class="evidence-body"></div>
+  <div id="evidenceFooter" class="evidence-footer" style="display:none;">
+    <span id="evidenceSignedInAs"></span>
+    <button type="button" class="link-btn" id="evidenceSignOutBtn">Sign out</button>
+  </div>
+</div>
+
+<script>
+  var evidenceState = {
+    claimText: null,     // claim currently shown in the sidebar
+    account: null,       // last successful result of getClimateshedAccount()
+    pendingEmail: '',    // email a sign-in code was sent to
+    searchedClaim: null  // claim whose results are currently displayed
+  };
+
+  var EVIDENCE_DOC_TYPE_LABELS = {
+    scientific: 'Scientific',
+    report: 'Report',
+    assessment: 'Assessment',
+    regulation: 'Regulation',
+    plan: 'Plan',
+    strategy: 'Strategy',
+    guidance: 'Guidance',
+    data: 'Data'
+  };
+
+  var EVIDENCE_EXCERPT_CHARS = 280;
+
+  /**
+   * Starts or refreshes the panel for a claim. The sidebar calls this when a
+   * claim is shown: on open, after Capture Selection, and in edit mode.
+   * @param {string|null} claimText
+   */
+  function startEvidencePanel(claimText) {
+    evidenceState.claimText = claimText || null;
+    document.getElementById('evidenceSignOutBtn').onclick = signOutOfEvidence;
+
+    if (evidenceState.account) {
+      onEvidenceAccount(evidenceState.account);
+      return;
+    }
+
+    renderEvidenceMessage('Checking your Climateshed account...', true);
+    google.script.run
+      .withSuccessHandler(onEvidenceAccount)
+      .withFailureHandler(function(err) {
+        renderEvidenceError(err.message, function() { startEvidencePanel(evidenceState.claimText); });
+      })
+      .getClimateshedAccount();
+  }
+
+  /**
+   * Shows the right panel state for the account, and searches when allowed.
+   * @param {Object} result - From getClimateshedAccount() or verifyClimateshedCode().
+   */
+  function onEvidenceAccount(result) {
+    if (!result || !result.success) {
+      renderEvidenceError(result && result.error, function() { startEvidencePanel(evidenceState.claimText); });
+      return;
+    }
+
+    evidenceState.account = result;
+    updateEvidenceFooter();
+
+    if (!result.signedIn) {
+      renderEvidenceSignIn(result.expired ? 'Your Climateshed session expired. Sign in again to search.' : '');
+    } else if (!result.access.allowed) {
+      renderEvidenceNoAccess(result.access);
+    } else if (!evidenceState.claimText) {
+      renderEvidenceMessage('Select a claim to search Climateshed for sources.');
+    } else if (evidenceState.searchedClaim !== evidenceState.claimText) {
+      runEvidenceSearch();
+    }
+  }
+
+  function runEvidenceSearch() {
+    var claim = evidenceState.claimText;
+    renderEvidenceMessage('Searching Climateshed... The first search after a quiet period can take up to 30 seconds.', true);
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (claim !== evidenceState.claimText) {
+          return; // A different claim was captured while this search ran.
+        }
+        if (result && result.success) {
+          evidenceState.searchedClaim = claim;
+          renderEvidenceResults(result);
+        } else if (result && result.signedOut) {
+          onEvidenceAccount({ success: true, signedIn: false, expired: true });
+        } else if (result && result.accessDenied) {
+          var access = { allowed: false, message: result.error, accountUrl: result.accountUrl };
+          if (evidenceState.account) {
+            evidenceState.account.access = access;
+          }
+          renderEvidenceNoAccess(access);
+        } else {
+          renderEvidenceError(result && result.error, runEvidenceSearch);
+        }
+      })
+      .withFailureHandler(function(err) {
+        if (claim === evidenceState.claimText) {
+          renderEvidenceError(err.message, runEvidenceSearch);
+        }
+      })
+      .searchClimateshedEvidence(claim);
+  }
+
+  /**
+   * Runs a Climateshed.gs function from a button, with a busy label and inline errors.
+   * @param {HTMLButtonElement} button
+   * @param {string} busyLabel
+   * @param {HTMLElement} errorEl
+   * @param {string} functionName - Server function in Climateshed.gs.
+   * @param {Array} args
+   * @param {Function} onSuccess - Receives the { success: true, ... } result.
+   */
+  function runEvidenceAction(button, busyLabel, errorEl, functionName, args, onSuccess) {
+    var idleLabel = button.textContent;
+    var fail = function(message) {
+      errorEl.textContent = message || 'Something went wrong reaching Climateshed.';
+      button.disabled = false;
+      button.textContent = idleLabel;
+    };
+
+    errorEl.textContent = '';
+    button.disabled = true;
+    button.textContent = busyLabel;
+
+    var runner = google.script.run
+      .withSuccessHandler(function(result) {
+        if (result && result.success) {
+          onSuccess(result);
+        } else {
+          fail(result && result.error);
+        }
+      })
+      .withFailureHandler(function(err) { fail(err.message); });
+    runner[functionName].apply(runner, args);
+  }
+
+  function evidenceEl(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text) node.textContent = text;
+    return node;
+  }
+
+  function evidenceButton(className, label, onClick) {
+    var button = evidenceEl('button', className, label);
+    button.type = 'button';
+    button.addEventListener('click', onClick);
+    return button;
+  }
+
+  function evidenceLink(label, url) {
+    var link = evidenceEl('a', '', label);
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    return link;
+  }
+
+  function resetEvidenceBody() {
+    var body = document.getElementById('evidenceBody');
+    while (body.firstChild) {
+      body.removeChild(body.firstChild);
+    }
+    return body;
+  }
+
+  function renderEvidenceMessage(text, loading) {
+    resetEvidenceBody().appendChild(evidenceEl('p', loading ? 'evidence-muted evidence-loading' : 'evidence-muted', text));
+  }
+
+  function renderEvidenceError(message, retry) {
+    var body = resetEvidenceBody();
+    body.appendChild(evidenceEl('p', 'evidence-error', message || 'Something went wrong reaching Climateshed.'));
+    if (retry) {
+      body.appendChild(evidenceButton('btn btn-secondary btn-small', 'Try again', retry));
+    }
+  }
+
+  function renderEvidenceSignIn(note) {
+    var body = resetEvidenceBody();
+    body.appendChild(evidenceEl('p', 'evidence-muted',
+      'Sign in to search the Climateshed corpus for sources on this claim. You can assess without signing in.'));
+    if (note) {
+      body.appendChild(evidenceEl('p', 'evidence-warning', note));
+    }
+
+    var email = evidenceEl('input');
+    email.type = 'text';
+    email.placeholder = 'Your Climateshed email';
+    email.setAttribute('autocomplete', 'email');
+    email.value = evidenceState.pendingEmail;
+    body.appendChild(email);
+
+    var error = evidenceEl('p', 'evidence-error');
+    var send = evidenceButton('btn btn-secondary btn-small', 'Email me a sign-in code', function() {
+      var value = email.value.trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+        error.textContent = 'Enter a valid email address.';
+        return;
+      }
+      runEvidenceAction(send, 'Sending...', error, 'requestClimateshedCode', [value], function() {
+        evidenceState.pendingEmail = value;
+        renderEvidenceCodeEntry();
+      });
+    });
+    body.appendChild(send);
+    body.appendChild(error);
+  }
+
+  function renderEvidenceCodeEntry() {
+    var body = resetEvidenceBody();
+    body.appendChild(evidenceEl('p', 'evidence-muted',
+      'Enter the 6-digit code sent to ' + evidenceState.pendingEmail + '. It expires in 10 minutes.'));
+
+    var code = evidenceEl('input');
+    code.type = 'text';
+    code.placeholder = '6-digit code';
+    code.maxLength = 6;
+    code.setAttribute('inputmode', 'numeric');
+    code.setAttribute('autocomplete', 'one-time-code');
+    body.appendChild(code);
+
+    var error = evidenceEl('p', 'evidence-error');
+    var signIn = evidenceButton('btn btn-primary btn-small', 'Sign in', function() {
+      var value = code.value.trim();
+      if (!/^\d{6}$/.test(value)) {
+        error.textContent = 'Enter the 6-digit code from the email.';
+        return;
+      }
+      runEvidenceAction(signIn, 'Signing in...', error, 'verifyClimateshedCode',
+        [evidenceState.pendingEmail, value], onEvidenceAccount);
+    });
+    body.appendChild(signIn);
+    body.appendChild(error);
+    body.appendChild(evidenceButton('link-btn', 'Use a different email', function() { renderEvidenceSignIn(''); }));
+    code.focus();
+  }
+
+  function renderEvidenceNoAccess(access) {
+    var body = resetEvidenceBody();
+    body.appendChild(evidenceEl('p', 'evidence-muted', access.message));
+    if (access.accountUrl) {
+      body.appendChild(evidenceLink('Open your Climateshed account', access.accountUrl));
+    }
+  }
+
+  function renderEvidenceResults(result) {
+    var body = resetEvidenceBody();
+    var results = result.results || [];
+
+    if (results.length === 0) {
+      body.appendChild(evidenceEl('p', 'evidence-muted',
+        'The Climateshed corpus doesn\'t cover this claim. That isn\'t the same as limited evidence. Add any sources you know of below.'));
+      return;
+    }
+
+    body.appendChild(evidenceEl('p', 'evidence-muted',
+      results.length + ' passage' + (results.length === 1 ? '' : 's') + ' from '
+      + result.documentCount + ' document' + (result.documentCount === 1 ? '' : 's')
+      + ', most relevant first. Nothing is added to your assessment unless you choose it.'));
+
+    results.forEach(function(item) {
+      body.appendChild(buildEvidenceResult(item));
+    });
+
+    body.appendChild(evidenceEl('p', 'evidence-muted evidence-small',
+      'Passages are quoted from the Climateshed corpus. Check the original document before citing it.'));
+  }
+
+  function buildEvidenceResult(item) {
+    var card = evidenceEl('div', 'evidence-result');
+    card.appendChild(evidenceEl('div', 'evidence-result-title', item.title));
+
+    var meta = [item.year, EVIDENCE_DOC_TYPE_LABELS[item.doc_type] || item.doc_type]
+      .filter(function(part) { return part; })
+      .join(' · ');
+    if (meta) {
+      card.appendChild(evidenceEl('div', 'evidence-result-meta', meta));
+    }
+
+    var passage = item.passage || '';
+    var excerpt = passage.length > EVIDENCE_EXCERPT_CHARS ? passage.substring(0, EVIDENCE_EXCERPT_CHARS) + '...' : passage;
+    var passageEl = evidenceEl('div', 'evidence-passage', excerpt);
+    card.appendChild(passageEl);
+
+    var actions = evidenceEl('div', 'evidence-actions');
+    if (excerpt !== passage) {
+      var toggle = evidenceButton('link-btn', 'Show full passage', function() {
+        var showingFull = passageEl.textContent === passage;
+        passageEl.textContent = showingFull ? excerpt : passage;
+        toggle.textContent = showingFull ? 'Show full passage' : 'Hide full passage';
+      });
+      actions.appendChild(toggle);
+    }
+    var hasLink = item.url && /^https?:\/\//i.test(item.url);
+    if (hasLink) {
+      actions.appendChild(evidenceLink('Open document', item.url));
+    }
+    var add = evidenceButton('btn btn-secondary evidence-add-btn', 'Add as source', function() {
+      addEvidenceAsSource(item, add);
+    });
+    actions.appendChild(add);
+    card.appendChild(actions);
+
+    return card;
+  }
+
+  /**
+   * Adds a search result to the Sources list, replacing an empty source card if
+   * there is one. Publisher and page are left for the author to fill in.
+   */
+  function addEvidenceAsSource(item, button) {
+    var cards = document.querySelectorAll('#sourceList .source-card');
+    for (var i = 0; i < cards.length; i++) {
+      var inputs = cards[i].querySelectorAll('input');
+      var isBlank = Array.prototype.every.call(inputs, function(input) { return !input.value.trim(); });
+      if (isBlank) {
+        cards[i].parentNode.removeChild(cards[i]);
+        break;
+      }
+    }
+
+    if (document.querySelectorAll('#sourceList .source-card').length >= MAX_SOURCES) {
+      updateSourceCards();
+      button.textContent = 'Source limit reached';
+      button.disabled = true;
+      return;
+    }
+
+    addSourceCard({
+      title: item.title,
+      publisher: '',
+      year: item.year ? String(item.year) : '',
+      page: '',
+      url: item.url && /^https?:\/\//i.test(item.url) ? item.url : '',
+      origin: 'climateshed'
+    });
+    button.textContent = 'Added below';
+    button.disabled = true;
+  }
+
+  function updateEvidenceFooter() {
+    var account = evidenceState.account;
+    var footer = document.getElementById('evidenceFooter');
+    if (account && account.signedIn) {
+      document.getElementById('evidenceSignedInAs').textContent = 'Signed in as ' + (account.email || 'Climateshed user');
+      footer.style.display = 'flex';
+    } else {
+      footer.style.display = 'none';
+    }
+  }
+
+  function signOutOfEvidence() {
+    google.script.run
+      .withSuccessHandler(function() {
+        evidenceState.searchedClaim = null;
+        onEvidenceAccount({ success: true, signedIn: false });
+      })
+      .withFailureHandler(function(err) { renderEvidenceError(err.message, null); })
+      .signOutOfClimateshed();
+  }
+</script>

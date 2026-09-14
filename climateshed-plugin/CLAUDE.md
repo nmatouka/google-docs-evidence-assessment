@@ -9,7 +9,21 @@ A paid Google Docs add-on built from the free Evidence Assessment add-on (`../sr
 - Top-level declarations in `Config.gs` use `const` on purpose. If this code is ever loaded alongside the free add-on (which uses `var`), the project fails with "Identifier has already been declared" instead of running a mix. Don't change them to `var`.
 - `PLUGIN_EDITION` must appear only in this folder. `push.sh` refuses to push if it shows up in `src/`.
 
-## What the AI may and may not do (not built yet)
+## Climateshed connection (`Climateshed.gs`, `UI/EvidencePanel.html`)
+
+- Sign-in uses the Climateshed email-code login (`/auth/otp/request`, then `/auth/otp/verify`). The 30-day session token is stored in UserProperties, which only that Google user can read, and never in the document.
+- `CONFIG.API_BASE_URL` points at the dev API (`ca-climate-api-dev.fly.dev`). Every host the plugin calls must also be listed in `urlFetchWhitelist` in `appsscript.json`.
+- Evidence search (`POST /evidence/search` in `commercial-CA-climate-rag`, `app/evidence.py`) needs an active Starter or Pro subscription plus `users.evidence_access`, granted by hand in Supabase. The server enforces this; the plugin pre-checks it only to show a clearer message.
+- The search runs when the author opens a claim. It returns corpus passages verbatim, with no ratings and no generated text. A source is added only when the author clicks "Add as source", and it is stored with `origin: 'climateshed'`.
+- Manual assessment works without signing in. Only the evidence panel needs an account.
+- Sidebar functions in `Climateshed.gs` return `{ success, error }` instead of using `safeExecute()`, so network errors show inline rather than as a modal dialog.
+
+**Before release:**
+- Switch `API_BASE_URL` and `urlFetchWhitelist` to `https://api.climateshed.app`.
+- Sign-in calls come from Google's shared servers, so the backend's per-IP limit (5 code requests a minute) is shared by every plugin user and needs a different key.
+- Calibrate the relevance cutoff (`_MIN_RELEVANCE`) in `app/evidence.py` against real claims.
+
+## What the AI may and may not do (evidence search built; ratings and flags not yet)
 
 The AI supports the author's decision and never makes it.
 
