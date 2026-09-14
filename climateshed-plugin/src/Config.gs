@@ -1,0 +1,135 @@
+/**
+ * Config.gs — Constants, enums, and defaults for the Climateshed Evidence add-on.
+ *
+ * Top-level declarations here use const on purpose. The free add-on (src/)
+ * declares the same names with var, so if both code sets are ever pushed into
+ * one Apps Script project, the project fails to load ("Identifier has already
+ * been declared") instead of silently running a mix of the two.
+ * scripts/push.sh also checks for PLUGIN_EDITION to keep this code out of src/.
+ */
+
+const PLUGIN_EDITION = 'climateshed';
+
+const CONFIG = {
+  VERSION: '0.1.0',
+  ADDON_NAME: 'Climateshed Evidence',
+  SCHEMA_VERSION: 2,
+
+  // DocumentProperties keys. Each assessment gets its own key because Apps
+  // Script limits a single property value to 9KB (500KB for the whole store).
+  ASSESSMENT_KEY_PREFIX: 'assessment_',
+  CONFIG_KEY: 'evidenceConfig',
+
+  // Kept under 9KB to leave room for the key and any difference in how
+  // Google counts bytes.
+  MAX_VALUE_BYTES: 8900,
+
+  // Named ranges anchor claims and markers so they move with document edits.
+  // A selection captured when the sidebar opens stays "pending" until saved.
+  PENDING_RANGE_PREFIX: 'ea_pending_',
+  CLAIM_RANGE_PREFIX: 'ea_claim_',
+  MARKER_RANGE_PREFIX: 'ea_marker_',
+  PENDING_RANGE_MAX_AGE_MS: 24 * 60 * 60 * 1000,
+
+  // How long to wait for another collaborator's change to finish.
+  LOCK_TIMEOUT_MS: 10000,
+
+  MAX_SOURCES: 20,
+
+  // Appendix
+  APPENDIX_TITLE: 'Evidence Assessment Appendix',
+
+  // Sidebar
+  SIDEBAR_TITLE: 'Assess Evidence',
+
+  // Manager dialog
+  MANAGER_TITLE: 'Manage Assessments',
+  MANAGER_WIDTH: 500,
+  MANAGER_HEIGHT: 450
+};
+
+// IPCC-style evidence quality levels
+const EVIDENCE_QUALITY = {
+  LIMITED: 'limited',
+  MEDIUM: 'medium',
+  ROBUST: 'robust'
+};
+
+const EVIDENCE_QUALITY_LABELS = {
+  limited: 'Limited',
+  medium: 'Medium',
+  robust: 'Robust'
+};
+
+// Level of agreement among sources
+const AGREEMENT_LEVEL = {
+  LOW: 'low',
+  MEDIUM: 'medium',
+  HIGH: 'high'
+};
+
+const AGREEMENT_LEVEL_LABELS = {
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High'
+};
+
+// Overall confidence (a judgment informed by evidence + agreement)
+const CONFIDENCE_LEVEL = {
+  VERY_LOW: 'very-low',
+  LOW: 'low',
+  MEDIUM: 'medium',
+  HIGH: 'high',
+  VERY_HIGH: 'very-high'
+};
+
+const CONFIDENCE_LEVEL_LABELS = {
+  'very-low': 'Very Low',
+  'low': 'Low',
+  'medium': 'Medium',
+  'high': 'High',
+  'very-high': 'Very High'
+};
+
+// Structured source fields. Only title is required.
+const SOURCE_FIELDS = ['title', 'publisher', 'year', 'page', 'url'];
+
+// Superscript Unicode digits for markers (0-9)
+const SUPERSCRIPT_DIGITS = {
+  '0': '\u2070',
+  '1': '\u00B9',
+  '2': '\u00B2',
+  '3': '\u00B3',
+  '4': '\u2074',
+  '5': '\u2075',
+  '6': '\u2076',
+  '7': '\u2077',
+  '8': '\u2078',
+  '9': '\u2079'
+};
+
+// Citation style modes
+const CITATION_STYLE = {
+  SUPERSCRIPT: 'superscript',
+  PARENTHETICAL: 'parenthetical'
+};
+
+// Parenthetical detail level options
+const PARENTHETICAL_DETAIL = {
+  CONFIDENCE: 'confidence',                 // e.g. "(high confidence)"
+  EVIDENCE_AGREEMENT: 'evidence-agreement', // e.g. "(robust evidence, high agreement)"
+  FULL: 'full'                              // e.g. "(robust evidence, high agreement, high confidence)"
+};
+
+// Parenthetical bracket style options
+const PARENTHETICAL_BRACKET = {
+  PARENTHESES: 'parentheses',  // (high confidence)
+  CURLY: 'curly'               // {high confidence}
+};
+
+// Default per-document config
+const DEFAULT_DOC_CONFIG = {
+  citationStyle: CITATION_STYLE.SUPERSCRIPT,
+  parentheticalDetail: PARENTHETICAL_DETAIL.CONFIDENCE,
+  parentheticalBracket: PARENTHETICAL_BRACKET.PARENTHESES
+};

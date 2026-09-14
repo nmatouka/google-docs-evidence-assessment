@@ -1,0 +1,26 @@
+{
+  "timeZone": "America/Los_Angeles",
+  "dependencies": {},
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8",
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/documents.currentonly",
+    "https://www.googleapis.com/auth/script.container.ui",
+    "https://www.googleapis.com/auth/userinfo.email"
+  ],
+  "addOns": {
+    "common": {
+      "name": "Climateshed Evidence",
+      "logoUrl": "https://raw.githubusercontent.com/nmatouka/google-docs-evidence-assessment/a331d37eb36e126b3d48e02e75b7f8a5d77caee1/evidence_assessment.png",
+      "homepageTrigger": {
+        "runFunction": "onHomepage",
+        "enabled": false
+      }
+    },
+    "docs": {
+      "onFileScopeGrantedTrigger": {
+        "runFunction": "onOpen"
+      }
+    }
+  }
+}

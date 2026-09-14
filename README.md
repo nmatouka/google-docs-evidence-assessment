@@ -32,6 +32,25 @@ A Google Docs add-on for systematic IPCC-style uncertainty communication in poli
 | Citation Style | Switch between superscript and IPCC parenthetical markers |
 | Help | Quick-reference guide |
 
+## Two Add-ons in This Repo
+
+| Folder | Add-on | Status |
+|--------|--------|--------|
+| `src/` | Evidence Assessment (free) | Published. Known structural issues are listed in [KNOWN_ISSUES.md](KNOWN_ISSUES.md) |
+| `climateshed-plugin/src/` | Climateshed Evidence (requires a paid Climateshed account) | In development |
+
+The two add-ons share function names and must never be pushed into the same Apps Script project. Push them with [clasp](https://github.com/google/clasp) through the guard script, which refuses any setup that could mix them:
+
+```bash
+scripts/push.sh free
+```
+
+```bash
+scripts/push.sh climateshed
+```
+
+Each add-on's `.clasp.json` lives inside its own source folder. Copy `.clasp.json.example` there and set the script ID. Never create a `.clasp.json` at the repo root.
+
 ## Project Structure
 
 ```

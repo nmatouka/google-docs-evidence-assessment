@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <?!= include('Styles') ?>
+  <style>
+    .option-group {
+      margin-bottom: 16px;
+    }
+
+    .option-group > label {
+      display: block;
+      font-weight: bold;
+      font-size: 12px;
+      color: #555;
+      margin-bottom: 8px;
+    }
+
+    .radio-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .radio-stack label {
+      font-weight: normal;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      cursor: pointer;
+      line-height: 1.4;
+    }
+
+    .radio-stack input[type="radio"] {
+      margin-top: 2px;
+      flex-shrink: 0;
+    }
+
+    .radio-desc {
+      font-size: 11px;
+      color: #888;
+      margin-top: 2px;
+    }
+
+    .preview-box {
+      background: #f8f9fa;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      padding: 10px 12px;
+      margin: 12px 0 16px;
+      font-size: 12px;
+      color: #333;
+      line-height: 1.6;
+    }
+
+    .preview-label {
+      font-size: 11px;
+      font-weight: bold;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .preview-marker-superscript {
+      font-size: 8px;
+      color: #1a73e8;
+      font-weight: bold;
+      vertical-align: super;
+    }
+
+    .preview-marker-parenthetical {
+      color: #555;
+      font-style: italic;
+    }
+
+    .parenthetical-options {
+      margin-left: 20px;
+      padding-left: 12px;
+      border-left: 2px solid #dadce0;
+    }
+
+    .footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding-top: 12px;
+      border-top: 1px solid #dadce0;
+    }
+  </style>
+</head>
+<body>
+  <div id="statusMsg" class="status-msg"></div>
+
+  <!-- Citation Style -->
+  <div class="option-group">
+    <label>Citation Style</label>
+    <div class="radio-stack">
+      <label>
+        <input type="radio" name="citationStyle" value="superscript">
+        <div>
+          Superscript number <span style="font-size:8px;color:#1a73e8;font-weight:bold;vertical-align:super;">¹</span>
+          <div class="radio-desc">Numbered markers link to a full evidence appendix.</div>
+        </div>
+      </label>
+      <label>
+        <input type="radio" name="citationStyle" value="parenthetical">
+        <div>
+          IPCC Parenthetical
+          <div class="radio-desc">Confidence statement appears inline in the document text.</div>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <!-- Parenthetical options (shown only when parenthetical is selected) -->
+  <div id="parentheticalOptions" class="parenthetical-options" style="display:none;">
+    <div class="option-group" style="margin-top:12px;">
+      <label>Detail Level</label>
+      <div class="radio-stack">
+        <label>
+          <input type="radio" name="parentheticalDetail" value="confidence">
+          <div>
+            Confidence only
+            <div class="radio-desc">e.g. (high confidence)</div>
+          </div>
+        </label>
+        <label>
+          <input type="radio" name="parentheticalDetail" value="evidence-agreement">
+          <div>
+            Evidence + Agreement
+            <div class="radio-desc">e.g. (robust evidence, high agreement)</div>
+          </div>
+        </label>
+        <label>
+          <input type="radio" name="parentheticalDetail" value="full">
+          <div>
+            Full
+            <div class="radio-desc">e.g. (robust evidence, high agreement, high confidence)</div>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <div class="option-group">
+      <label>Bracket Style</label>
+      <div class="radio-stack">
+        <label>
+          <input type="radio" name="parentheticalBracket" value="parentheses">
+          <div>
+            Parentheses &nbsp;<span style="color:#555;font-style:italic;">(high confidence)</span>
+          </div>
+        </label>
+        <label>
+          <input type="radio" name="parentheticalBracket" value="curly">
+          <div>
+            Curly braces &nbsp;<span style="color:#555;font-style:italic;">{high confidence}</span>
+            <div class="radio-desc">IPCC AR6 Technical Report convention</div>
+          </div>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live preview -->
+  <div class="preview-label">Preview</div>
+  <div class="preview-box">
+    Global temperatures have increased significantly
+    <span id="previewMarker" class="preview-marker-superscript">¹</span>
+    over the past century.
+  </div>
+
+  <div class="footer">
+    <button class="btn btn-secondary" onclick="google.script.host.close()" style="flex:none;">Cancel</button>
+    <button class="btn btn-primary" id="applyBtn" onclick="handleApply()" style="flex:none;">Apply</button>
+  </div>
+
+  <script>
+    var currentConfig = <?!= currentConfig ?>;
+
+    function init() {
+      // Set radios to current config values
+      setRadio('citationStyle', currentConfig.citationStyle || 'superscript');
+      setRadio('parentheticalDetail', currentConfig.parentheticalDetail || 'confidence');
+      setRadio('parentheticalBracket', currentConfig.parentheticalBracket || 'parentheses');
+
+      // Wire up change listeners for live preview
+      var allRadios = document.querySelectorAll('input[type="radio"]');
+      for (var i = 0; i < allRadios.length; i++) {
+        allRadios[i].addEventListener('change', onSettingChange);
+      }
+
+      updateUI();
+    }
+
+    function onSettingChange() {
+      updateUI();
+    }
+
+    function updateUI() {
+      var style = getRadio('citationStyle');
+      var isParenthetical = style === 'parenthetical';
+
+      // Show/hide parenthetical sub-options
+      document.getElementById('parentheticalOptions').style.display = isParenthetical ? 'block' : 'none';
+
+      // Update preview
+      updatePreview(style);
+    }
+
+    function updatePreview(style) {
+      var marker = document.getElementById('previewMarker');
+
+      if (style !== 'parenthetical') {
+        marker.className = 'preview-marker-superscript';
+        marker.textContent = '¹';
+        return;
+      }
+
+      var detail = getRadio('parentheticalDetail') || 'confidence';
+      var bracket = getRadio('parentheticalBracket') || 'parentheses';
+      var open = bracket === 'curly' ? '{' : '(';
+      var close = bracket === 'curly' ? '}' : ')';
+
+      var text;
+      if (detail === 'confidence') {
+        text = open + 'high confidence' + close;
+      } else if (detail === 'evidence-agreement') {
+        text = open + 'robust evidence, high agreement' + close;
+      } else {
+        text = open + 'robust evidence, high agreement, high confidence' + close;
+      }
+
+      marker.className = 'preview-marker-parenthetical';
+      marker.textContent = ' ' + text;
+    }
+
+    function handleApply() {
+      var style = getRadio('citationStyle');
+      var detail = getRadio('parentheticalDetail') || 'confidence';
+      var bracket = getRadio('parentheticalBracket') || 'parentheses';
+
+      var btn = document.getElementById('applyBtn');
+      btn.disabled = true;
+      btn.textContent = 'Applying...';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success) {
+            var msg = result.converted > 0
+              ? 'Style applied. ' + result.converted + ' marker(s) converted.'
+              : 'Style saved.';
+            showStatus('success', msg);
+            setTimeout(function() { google.script.host.close(); }, 1500);
+          } else {
+            showStatus('error', (result && result.error) || 'Failed to apply style.');
+            btn.disabled = false;
+            btn.textContent = 'Apply';
+          }
+        })
+        .withFailureHandler(function(err) {
+          showStatus('error', 'Error: ' + err.message);
+          btn.disabled = false;
+          btn.textContent = 'Apply';
+        })
+        .convertMarkerStyle(style, detail, bracket);
+    }
+
+    function setRadio(name, value) {
+      var radios = document.getElementsByName(name);
+      for (var i = 0; i < radios.length; i++) {
+        if (radios[i].value === value) {
+          radios[i].checked = true;
+          return;
+        }
+      }
+      // Default to first option if value not found
+      if (radios.length > 0) radios[0].checked = true;
+    }
+
+    function getRadio(name) {
+      var radios = document.getElementsByName(name);
+      for (var i = 0; i < radios.length; i++) {
+        if (radios[i].checked) return radios[i].value;
+      }
+      return '';
+    }
+
+    function showStatus(type, message) {
+      var el = document.getElementById('statusMsg');
+      el.className = 'status-msg ' + type;
+      el.textContent = message;
+    }
+
+    init();
+  </script>
+</body>
+</html>

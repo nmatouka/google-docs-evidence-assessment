@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <?!= include('Styles') ?>
+</head>
+<body>
+  <h3 id="formTitle">Assess Evidence</h3>
+  <div id="statusMsg" class="status-msg"></div>
+
+  <!-- Claim display -->
+  <div class="section">
+    <label>Selected Claim</label>
+    <div class="claim-display" id="claimDisplay">
+      <em>No text selected.</em>
+    </div>
+    <div id="captureRow" style="display:none;margin-top:6px;">
+      <button class="btn btn-secondary btn-small" id="captureBtn" onclick="handleCaptureSelection()">
+        Capture Selection
+      </button>
+      <div class="field-hint">Highlight text in the document, then click the button above.</div>
+    </div>
+    <div id="noSelectionError" class="error">
+      Could not detect selected text. Highlight a claim in the document, then click "Capture Selection".
+    </div>
+  </div>
+
+  <!-- Evidence Quality -->
+  <div class="section">
+    <label>Evidence Quality</label>
+    <div class="radio-group">
+      <label><input type="radio" name="evidenceQuality" value="limited"> Limited</label>
+      <label><input type="radio" name="evidenceQuality" value="medium"> Medium</label>
+      <label><input type="radio" name="evidenceQuality" value="robust"> Robust</label>
+    </div>
+    <div id="evidenceQualityError" class="error">Please select an evidence quality level.</div>
+  </div>
+
+  <!-- Sources -->
+  <div class="section">
+    <label>Sources</label>
+    <div id="sourceList"></div>
+    <button type="button" class="btn btn-secondary btn-small" id="addSourceBtn" onclick="addSourceCard(null)">
+      + Add source
+    </button>
+  </div>
+
+  <!-- Evidence Notes -->
+  <div class="section">
+    <label>Evidence Notes <span class="optional">(optional)</span></label>
+    <textarea id="evidenceNotes" placeholder="Notes on evidence quality..." rows="2"></textarea>
+  </div>
+
+  <!-- Agreement Level -->
+  <div class="section">
+    <label>Agreement Level</label>
+    <div class="radio-group">
+      <label><input type="radio" name="agreementLevel" value="low"> Low</label>
+      <label><input type="radio" name="agreementLevel" value="medium"> Medium</label>
+      <label><input type="radio" name="agreementLevel" value="high"> High</label>
+    </div>
+    <div id="agreementLevelError" class="error">Please select an agreement level.</div>
+  </div>
+
+  <!-- Agreement Notes -->
+  <div class="section">
+    <label>Agreement Notes <span class="optional">(optional)</span></label>
+    <textarea id="agreementNotes" placeholder="Notes on level of agreement..." rows="2"></textarea>
+  </div>
+
+  <!-- Confidence Level -->
+  <div class="section">
+    <label>Overall Confidence</label>
+    <select id="confidenceLevel">
+      <option value="">-- Select --</option>
+      <option value="very-low">Very Low</option>
+      <option value="low">Low</option>
+      <option value="medium">Medium</option>
+      <option value="high">High</option>
+      <option value="very-high">Very High</option>
+    </select>
+    <div id="confidenceLevelError" class="error">Please select a confidence level.</div>
+    <div id="confidenceHint" class="confidence-hint"></div>
+  </div>
+
+  <!-- Conditional Statement -->
+  <div class="section">
+    <label>Conditional Statement <span class="optional">(optional)</span></label>
+    <input type="text" id="conditional" placeholder="e.g., Assumes 80%+ participation rate">
+  </div>
+
+  <!-- Buttons -->
+  <div class="btn-row">
+    <button class="btn btn-primary" id="saveBtn" onclick="handleSave()">Save</button>
+    <button class="btn btn-secondary" onclick="google.script.host.close()">Cancel</button>
+  </div>
+
+  <script>
+    // Data passed from the server before the sidebar opened.
+    // selectionData: { pendingRangeName, text } for a new claim, or { text } when editing.
+    var selectionData = <?!= selectionData ?>;
+    var editData = <?!= editData ?>;
+    var MAX_SOURCES = <?!= maxSources ?>;
+
+    var isEditMode = editData !== null;
+    var editId = isEditMode ? editData.id : null;
+
+    // Structured source fields. Must match SOURCE_FIELDS in Config.gs.
+    var SOURCE_FIELD_DEFS = [
+      { name: 'title', label: 'Title', placeholder: 'Report or article title' },
+      { name: 'publisher', label: 'Publisher', placeholder: 'e.g., IPCC, CARB' },
+      { name: 'year', label: 'Year', placeholder: 'YYYY', maxLength: 4, inputMode: 'numeric', half: true },
+      { name: 'page', label: 'Page or section', placeholder: 'e.g., 42 or SPM A.3', half: true },
+      { name: 'url', label: 'URL', placeholder: 'https://', inputMode: 'url' }
+    ];
+
+    /**
+     * Initialize the form on load.
+     */
+    function init() {
+      if (isEditMode) {
+        populateEditForm();
+      } else if (selectionData && selectionData.text) {
+        document.getElementById('claimDisplay').textContent = selectionData.text;
+        addSourceCard(null);
+      } else {
+        // No selection when the sidebar opened: let the author select text, then capture it.
+        document.getElementById('captureRow').style.display = 'block';
+        document.getElementById('saveBtn').disabled = true;
+        addSourceCard(null);
+      }
+    }
+
+    /**
+     * Captures the current document selection via a server call.
+     */
+    function handleCaptureSelection() {
+      var btn = document.getElementById('captureBtn');
+      btn.disabled = true;
+      btn.textContent = 'Capturing...';
+      clearErrors();
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.text && result.pendingRangeName) {
+            selectionData = result;
+            document.getElementById('claimDisplay').textContent = result.text;
+            document.getElementById('captureRow').style.display = 'none';
+            document.getElementById('saveBtn').disabled = false;
+          } else {
+            showError('noSelectionError');
+            btn.disabled = false;
+            btn.textContent = 'Capture Selection';
+          }
+        })
+        .withFailureHandler(function(err) {
+          showStatus('error', 'Capture failed: ' + err.message);
+          btn.disabled = false;
+          btn.textContent = 'Capture Selection';
+        })
+        .captureSelection();
+    }
+
+    /**
+     * Pre-fill the form with existing assessment data for editing.
+     */
+    function populateEditForm() {
+      document.getElementById('formTitle').textContent = 'Edit Assessment';
+      document.getElementById('saveBtn').textContent = 'Update';
+      document.getElementById('claimDisplay').textContent = editData.claimText;
+
+      setRadio('evidenceQuality', editData.evidence.quality);
+      var sources = editData.evidence.sources || [];
+      if (sources.length === 0) {
+        addSourceCard(null);
+      }
+      sources.forEach(function(source) {
+        addSourceCard(source);
+      });
+      document.getElementById('evidenceNotes').value = editData.evidence.notes || '';
+
+      setRadio('agreementLevel', editData.agreement.level);
+      document.getElementById('agreementNotes').value = editData.agreement.notes || '';
+
+      document.getElementById('confidenceLevel').value = editData.confidence.level;
+      document.getElementById('conditional').value = editData.confidence.conditional || '';
+      checkConfidenceConsistency();
+    }
+
+    /**
+     * Adds a source card to the form. Built with DOM APIs so source text is never parsed as HTML.
+     * @param {Object|null} source - Existing source values, or null for a blank card.
+     */
+    function addSourceCard(source) {
+      if (document.querySelectorAll('#sourceList .source-card').length >= MAX_SOURCES) {
+        return;
+      }
+
+      var card = document.createElement('div');
+      card.className = 'source-card';
+
+      var header = document.createElement('div');
+      header.className = 'source-card-header';
+      var number = document.createElement('span');
+      number.className = 'source-card-number';
+      var removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'link-btn';
+      removeBtn.textContent = 'Remove';
+      removeBtn.addEventListener('click', function() {
+        card.parentNode.removeChild(card);
+        updateSourceCards();
+      });
+      header.appendChild(number);
+      header.appendChild(removeBtn);
+      card.appendChild(header);
+
+      var halfRow = null;
+      SOURCE_FIELD_DEFS.forEach(function(field) {
+        var wrapper = document.createElement('div');
+        wrapper.className = field.half ? 'source-field source-field-half' : 'source-field';
+
+        var label = document.createElement('label');
+        label.textContent = field.label;
+
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.setAttribute('data-field', field.name);
+        input.placeholder = field.placeholder;
+        if (field.maxLength) input.maxLength = field.maxLength;
+        if (field.inputMode) input.setAttribute('inputmode', field.inputMode);
+        input.value = source && source[field.name] ? source[field.name] : '';
+
+        wrapper.appendChild(label);
+        wrapper.appendChild(input);
+
+        if (field.half) {
+          if (!halfRow) {
+            halfRow = document.createElement('div');
+            halfRow.className = 'source-row';
+            card.appendChild(halfRow);
+          }
+          halfRow.appendChild(wrapper);
+        } else {
+          card.appendChild(wrapper);
+        }
+      });
+
+      var error = document.createElement('div');
+      error.className = 'error source-error';
+      card.appendChild(error);
+
+      document.getElementById('sourceList').appendChild(card);
+      updateSourceCards();
+    }
+
+    /**
+     * Renumbers source cards and disables "Add source" at the limit.
+     */
+    function updateSourceCards() {
+      var cards = document.querySelectorAll('#sourceList .source-card');
+      for (var i = 0; i < cards.length; i++) {
+        cards[i].querySelector('.source-card-number').textContent = 'Source ' + (i + 1);
+      }
+      document.getElementById('addSourceBtn').disabled = cards.length >= MAX_SOURCES;
+    }
+
+    /**
+     * Reads and validates source cards. Blank cards are ignored.
+     * @returns {Object} { sources: Object[], valid: boolean }
+     */
+    function collectSources() {
+      var sources = [];
+      var valid = true;
+      var cards = document.querySelectorAll('#sourceList .source-card');
+
+      for (var i = 0; i < cards.length; i++) {
+        var source = {};
+        SOURCE_FIELD_DEFS.forEach(function(field) {
+          source[field.name] = cards[i].querySelector('input[data-field="' + field.name + '"]').value.trim();
+        });
+
+        var isBlank = SOURCE_FIELD_DEFS.every(function(field) { return !source[field.name]; });
+        if (isBlank) continue;
+
+        var message = validateSource(source);
+        if (message) {
+          var errorEl = cards[i].querySelector('.source-error');
+          errorEl.textContent = message;
+          showErrorElement(errorEl);
+          valid = false;
+        }
+        sources.push(source);
+      }
+
+      return { sources: sources, valid: valid };
+    }
+
+    /**
+     * Mirrors normalizeSources() in Sources.gs so errors show before a server call.
+     * @returns {string} Error message, or '' if valid.
+     */
+    function validateSource(source) {
+      if (!source.title) return 'Add a title, or remove this source.';
+      if (source.year && !/^\d{4}$/.test(source.year)) return 'Year must be four digits.';
+      if (source.url && !/^https?:\/\/\S+$/i.test(source.url)) return 'URL must start with http:// or https://.';
+      return '';
+    }
+
+    function setRadio(name, value) {
+      var radios = document.getElementsByName(name);
+      for (var i = 0; i < radios.length; i++) {
+        if (radios[i].value === value) {
+          radios[i].checked = true;
+          break;
+        }
+      }
+    }
+
+    function getRadio(name) {
+      var radios = document.getElementsByName(name);
+      for (var i = 0; i < radios.length; i++) {
+        if (radios[i].checked) return radios[i].value;
+      }
+      return '';
+    }
+
+    /**
+     * Collects form data, validates, and sends to server.
+     */
+    function handleSave() {
+      clearErrors();
+
+      if (!isEditMode && !(selectionData && selectionData.pendingRangeName)) {
+        showError('noSelectionError');
+        return;
+      }
+
+      var valid = true;
+
+      var evidenceQuality = getRadio('evidenceQuality');
+      if (!evidenceQuality) {
+        showError('evidenceQualityError');
+        valid = false;
+      }
+
+      var sourceResult = collectSources();
+      if (!sourceResult.valid) {
+        valid = false;
+      }
+
+      var agreementLevel = getRadio('agreementLevel');
+      if (!agreementLevel) {
+        showError('agreementLevelError');
+        valid = false;
+      }
+
+      var confidenceLevel = document.getElementById('confidenceLevel').value;
+      if (!confidenceLevel) {
+        showError('confidenceLevelError');
+        valid = false;
+      }
+
+      if (!valid) return;
+
+      var formData = {
+        pendingRangeName: isEditMode ? null : selectionData.pendingRangeName,
+        evidence: {
+          quality: evidenceQuality,
+          sources: sourceResult.sources,
+          notes: document.getElementById('evidenceNotes').value.trim()
+        },
+        agreement: {
+          level: agreementLevel,
+          notes: document.getElementById('agreementNotes').value.trim()
+        },
+        confidence: {
+          level: confidenceLevel,
+          conditional: document.getElementById('conditional').value.trim()
+        }
+      };
+
+      var saveBtn = document.getElementById('saveBtn');
+      saveBtn.disabled = true;
+      saveBtn.textContent = isEditMode ? 'Updating...' : 'Saving...';
+
+      if (isEditMode) {
+        google.script.run
+          .withSuccessHandler(onSaveSuccess)
+          .withFailureHandler(onSaveFailure)
+          .handleUpdateAssessment(editId, formData);
+      } else {
+        google.script.run
+          .withSuccessHandler(onSaveSuccess)
+          .withFailureHandler(onSaveFailure)
+          .handleCreateAssessment(formData);
+      }
+    }
+
+    function onSaveSuccess(result) {
+      if (result && result.success) {
+        var message = isEditMode ? 'Assessment updated!' : 'Assessment saved!';
+        if (result.warning) {
+          showStatus('success', message + ' ' + result.warning);
+          setTimeout(function() { google.script.host.close(); }, 5000);
+        } else {
+          showStatus('success', message);
+          setTimeout(function() { google.script.host.close(); }, 1200);
+        }
+      } else {
+        var msg = (result && result.error) ? result.error : 'Unknown error';
+        onSaveFailure({ message: msg });
+      }
+    }
+
+    function onSaveFailure(error) {
+      showStatus('error', 'Failed: ' + error.message);
+      var saveBtn = document.getElementById('saveBtn');
+      saveBtn.disabled = false;
+      saveBtn.textContent = isEditMode ? 'Update' : 'Save';
+    }
+
+    function showError(elementId) {
+      showErrorElement(document.getElementById(elementId));
+    }
+
+    /**
+     * Shows an error element, scrolling to it if it's the first error visible.
+     */
+    function showErrorElement(el) {
+      var isFirstError = !document.querySelector('.error.visible');
+      el.classList.add('visible');
+      if (isFirstError) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+
+    function clearErrors() {
+      var errors = document.querySelectorAll('.error');
+      for (var i = 0; i < errors.length; i++) {
+        errors[i].classList.remove('visible');
+      }
+    }
+
+    function showStatus(type, message) {
+      var el = document.getElementById('statusMsg');
+      el.className = 'status-msg ' + type;
+      el.textContent = message;
+    }
+
+    /**
+     * IPCC-style expected confidence based on evidence quality + agreement level.
+     * Maps "evidence-agreement" to an expected confidence range.
+     */
+    var EXPECTED_CONFIDENCE = {
+      'robust-high':   ['high', 'very-high'],
+      'robust-medium': ['medium', 'high'],
+      'robust-low':    ['low', 'medium'],
+      'medium-high':   ['medium', 'high'],
+      'medium-medium': ['medium'],
+      'medium-low':    ['low', 'medium'],
+      'limited-high':  ['low', 'medium'],
+      'limited-medium':['low'],
+      'limited-low':   ['very-low', 'low']
+    };
+
+    /**
+     * Shows a non-blocking hint when confidence diverges from evidence + agreement.
+     */
+    function checkConfidenceConsistency() {
+      var evidence = getRadio('evidenceQuality');
+      var agreement = getRadio('agreementLevel');
+      var confidence = document.getElementById('confidenceLevel').value;
+      var hintEl = document.getElementById('confidenceHint');
+
+      if (!evidence || !agreement || !confidence) {
+        hintEl.style.display = 'none';
+        return;
+      }
+
+      var expected = EXPECTED_CONFIDENCE[evidence + '-' + agreement];
+
+      if (expected && expected.indexOf(confidence) === -1) {
+        var labels = { 'very-low': 'Very Low', 'low': 'Low', 'medium': 'Medium', 'high': 'High', 'very-high': 'Very High' };
+        var expectedLabels = expected.map(function(l) { return labels[l]; }).join(' or ');
+        hintEl.textContent = 'Note: With ' + evidence + ' evidence and ' + agreement + ' agreement, '
+          + 'IPCC guidance suggests ' + expectedLabels + ' confidence. '
+          + 'Your selection is valid if you have a reason to diverge.';
+        hintEl.style.display = 'block';
+      } else {
+        hintEl.style.display = 'none';
+      }
+    }
+
+    // Wire up consistency check on relevant field changes
+    ['evidenceQuality', 'agreementLevel'].forEach(function(name) {
+      var radios = document.getElementsByName(name);
+      for (var i = 0; i < radios.length; i++) {
+        radios[i].addEventListener('change', checkConfidenceConsistency);
+      }
+    });
+    document.getElementById('confidenceLevel').addEventListener('change', checkConfidenceConsistency);
+
+    init();
+  </script>
+</body>
+</html>

@@ -25,8 +25,10 @@ src/
 └── appsscript.json        # Apps Script manifest
 ```
 
+This tree is the free add-on. The paid Climateshed add-on lives in `climateshed-plugin/src/` and has its own `climateshed-plugin/CLAUDE.md`. The two must never be pushed into one Apps Script project; deploy with `scripts/push.sh free` or `scripts/push.sh climateshed`.
+
 ### Key Technical Constraints
-- **Storage:** DocumentProperties max 500KB → ~500 assessments per doc
+- **Storage:** DocumentProperties allows 9KB per value and 500KB per store. The free add-on keeps every assessment in one value, so it holds roughly 4–14 assessments (see `KNOWN_ISSUES.md`). The Climateshed add-on stores one value per assessment.
 - **Execution:** 6-minute script timeout per invocation
 - **Quotas:** 50,000 property read/writes per user per day
 - **No real footnote API** — use superscript markers linking to appendix
