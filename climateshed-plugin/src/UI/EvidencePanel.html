@@ -325,10 +325,11 @@
     body.appendChild(evidenceEl('p', 'evidence-muted',
       results.length + ' passage' + (results.length === 1 ? '' : 's') + ' from '
       + result.documentCount + ' document' + (result.documentCount === 1 ? '' : 's')
-      + ', most relevant first. Nothing is added to your assessment unless you choose it.'));
+      + (result.claimPlace ? ', local sources first' : ', most relevant first')
+      + ' (up to 2 passages per document). Nothing is added to your assessment unless you choose it.'));
 
     results.forEach(function(item) {
-      body.appendChild(buildEvidenceResult(item));
+      body.appendChild(buildEvidenceResult(item, result.claimPlace));
     });
 
     body.appendChild(evidenceEl('p', 'evidence-muted evidence-small',
@@ -405,7 +406,7 @@
       .join('\n\n');
   }
 
-  function buildEvidenceResult(item) {
+  function buildEvidenceResult(item, claimPlace) {
     var card = evidenceEl('div', 'evidence-result');
     card.appendChild(evidenceEl('div', 'evidence-result-title', item.title));
 
@@ -420,6 +421,10 @@
       card.appendChild(evidenceEl('div', 'evidence-place evidence-place-other', 'Different place from your claim'));
     } else if (item.place_match === 'same') {
       card.appendChild(evidenceEl('div', 'evidence-place evidence-place-same', 'Same place as your claim'));
+    } else if (item.place_match === 'related') {
+      // Same name at a different level, e.g. a city plan for a claim about the county.
+      card.appendChild(evidenceEl('div', 'evidence-place evidence-place-related',
+        claimPlace ? 'Related place: your claim is about ' + claimPlace : 'Related place'));
     }
 
     var passage = formatPassage(item.passage || '');
