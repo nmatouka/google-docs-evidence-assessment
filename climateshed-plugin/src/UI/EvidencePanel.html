@@ -138,7 +138,9 @@
         claimText: claim.text,
         pendingRangeName: claim.pendingRangeName || null,
         assessmentId: claim.assessmentId || null,
-        query: query || null
+        query: query || null,
+        // An edited search keeps the place found for the claim, for result ordering.
+        place: query && evidenceState.lastResult ? evidenceState.lastResult.claimPlace || null : null
       });
   }
 
@@ -342,6 +344,9 @@
     box.appendChild(evidenceEl('div', 'evidence-query-label',
       EVIDENCE_QUERY_LABELS[result.querySource] || 'Searched for:'));
     box.appendChild(evidenceEl('div', 'evidence-query-text', result.searchQuery || ''));
+    if (result.claimPlace) {
+      box.appendChild(evidenceEl('div', 'evidence-query-place', 'Place: ' + result.claimPlace));
+    }
     box.appendChild(evidenceButton('link-btn', 'Edit search', function() {
       renderEvidenceQueryEditor(result.searchQuery || (evidenceState.claim ? evidenceState.claim.text : ''));
     }));
@@ -378,18 +383,46 @@
     input.focus();
   }
 
+  // PDF text extraction leaves hard line breaks and private-use symbol glyphs
+  // (bullets that don't display). Tidy both for reading; the words are unchanged.
+  var EVIDENCE_SYMBOL_GLYPHS = new RegExp('[' + String.fromCharCode(0xE000) + '-' + String.fromCharCode(0xF8FF) + ']', 'g');
+
+  function formatPassage(text) {
+    return String(text)
+      .replace(/\r\n?/g, '\n')
+      .replace(EVIDENCE_SYMBOL_GLYPHS, '•')
+      .split(/\n[ \t]*\n/)
+      .map(function(paragraph) {
+        return paragraph.split('\n').reduce(function(joined, line) {
+          var trimmed = line.replace(/\s+/g, ' ').trim();
+          if (!trimmed) return joined;
+          if (!joined) return trimmed;
+          // Keep bullets on their own line; join lines the PDF wrapped.
+          return joined + (/^[•\-]/.test(trimmed) ? '\n' : ' ') + trimmed;
+        }, '');
+      })
+      .filter(function(paragraph) { return paragraph; })
+      .join('\n\n');
+  }
+
   function buildEvidenceResult(item) {
     var card = evidenceEl('div', 'evidence-result');
     card.appendChild(evidenceEl('div', 'evidence-result-title', item.title));
 
-    var meta = [item.year, EVIDENCE_DOC_TYPE_LABELS[item.doc_type] || item.doc_type]
+    var showPlace = item.place && String(item.title).indexOf(item.place) === -1;
+    var meta = [showPlace ? item.place : '', item.year, EVIDENCE_DOC_TYPE_LABELS[item.doc_type] || item.doc_type]
       .filter(function(part) { return part; })
       .join(' · ');
     if (meta) {
       card.appendChild(evidenceEl('div', 'evidence-result-meta', meta));
     }
+    if (item.place_match === 'other') {
+      card.appendChild(evidenceEl('div', 'evidence-place evidence-place-other', 'Different place from your claim'));
+    } else if (item.place_match === 'same') {
+      card.appendChild(evidenceEl('div', 'evidence-place evidence-place-same', 'Same place as your claim'));
+    }
 
-    var passage = item.passage || '';
+    var passage = formatPassage(item.passage || '');
     var excerpt = passage.length > EVIDENCE_EXCERPT_CHARS ? passage.substring(0, EVIDENCE_EXCERPT_CHARS) + '...' : passage;
     var passageEl = evidenceEl('div', 'evidence-passage', excerpt);
     card.appendChild(passageEl);

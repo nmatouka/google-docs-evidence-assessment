@@ -294,9 +294,9 @@ function signOutOfClimateshed() {
  * Climateshed can tell what the claim is about. Nothing else from the document
  * is sent. If the author edited the search text, that is sent instead of the
  * context and searched as written.
- * @param {Object|string} request - { claimText, pendingRangeName?, assessmentId?, query? }.
+ * @param {Object|string} request - { claimText, pendingRangeName?, assessmentId?, query?, place? }.
  *   A plain string is treated as the claim text.
- * @returns {Object} { success, results, documentCount, searchQuery, querySource } or
+ * @returns {Object} { success, results, documentCount, searchQuery, querySource, claimPlace } or
  *   { success: false, error, signedOut?, accessDenied?, permissionRequired?, accountUrl? }
  */
 function searchClimateshedEvidence(request) {
@@ -331,6 +331,10 @@ function searchClimateshedEvidence(request) {
         return { success: false, error: 'Search text must be between 10 and 2,000 characters.' };
       }
       payload.query = query;
+      var place = cleanString(request.place);
+      if (place) {
+        payload.place = place.substring(0, 100);
+      }
     } else {
       var context = getSearchContext(request);
       if (context) {
@@ -364,7 +368,8 @@ function searchClimateshedEvidence(request) {
       results: Array.isArray(response.body.results) ? response.body.results : [],
       documentCount: response.body.document_count || 0,
       searchQuery: response.body.search_query || query || claim,
-      querySource: response.body.query_source || (query ? 'author' : 'claim')
+      querySource: response.body.query_source || (query ? 'author' : 'claim'),
+      claimPlace: response.body.claim_place || null
     };
   });
 }

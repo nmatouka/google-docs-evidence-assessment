@@ -16,6 +16,8 @@ A paid Google Docs add-on built from the free Evidence Assessment add-on (`../sr
 - Evidence search (`POST /evidence/search` in `commercial-CA-climate-rag`, `app/evidence.py`) needs an active Starter or Pro subscription plus `users.evidence_access`, granted by hand in Supabase. The server enforces this; the plugin pre-checks it only to show a clearer message.
 - The search runs when the author opens a claim. The plugin sends the claim plus a short piece of context: the document title, the nearest heading above the claim, and the text just before it (`getClaimContext` in `Anchors.gs`, capped by `CONTEXT_*_CHARS` in `Config.gs`). Nothing else from the document is sent.
 - The backend has Claude rewrite the claim into a standalone query using that context. The panel shows the searched text and lets the author edit it and search again; an edited search is sent without context and searched as written.
+- The backend recognizes local plans by filename (`CA_City_<Place>_<Year>.pdf`). When the claim is about a place, that place's plans are also searched. Results show their place and are ordered: same place, then statewide and general sources, then other places' plans labeled "Different place from your claim".
+- The panel tidies passage line breaks and PDF symbol glyphs for display only; the words are unchanged.
 - Passages come back verbatim, with no ratings. A source is added only when the author clicks "Add as source", and it is stored with `origin: 'climateshed'`.
 - Manual assessment works without signing in. Only the evidence panel needs an account.
 - Sidebar functions in `Climateshed.gs` return `{ success, error }` instead of using `safeExecute()`, so network errors show inline rather than as a modal dialog.
@@ -23,7 +25,7 @@ A paid Google Docs add-on built from the free Evidence Assessment add-on (`../sr
 **Before release:**
 - Switch `API_BASE_URL` and `urlFetchWhitelist` to `https://api.climateshed.app`.
 - Sign-in calls come from Google's shared servers, so the backend's per-IP limit (5 code requests a minute) is shared by every plugin user and needs a different key.
-- Calibrate the relevance cutoff (`_MIN_RELEVANCE`) in `app/evidence.py` against real claims.
+- Recheck the relevance cutoff (`_MIN_RELEVANCE` in `app/evidence.py`, set to 0.5 from a dev calibration run of 11 claims on 2026-09-15) against real pilot claims and after corpus changes.
 
 ## What the AI may and may not do (evidence search built; ratings and flags not yet)
 
