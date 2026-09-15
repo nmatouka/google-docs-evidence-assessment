@@ -38,6 +38,12 @@
     claim: 'Searched for your claim as written:'
   };
 
+  var EVIDENCE_SCENARIO_LABELS = {
+    ssp245: 'SSP2-4.5',
+    ssp370: 'SSP3-7.0',
+    ssp585: 'SSP5-8.5'
+  };
+
   var EVIDENCE_EXCERPT_CHARS = 280;
 
   /**
@@ -112,6 +118,10 @@
           return; // A different claim was captured while this search ran.
         }
         if (result && result.success) {
+          if (query && !result.data && evidenceState.lastResult) {
+            // Climate data comes from reading the claim, which an edited search skips.
+            result.data = evidenceState.lastResult.data || null;
+          }
           evidenceState.searchedClaim = claim.text;
           evidenceState.lastResult = result;
           renderEvidenceResults(result);
@@ -312,13 +322,17 @@
   function renderEvidenceResults(result) {
     var body = resetEvidenceBody();
     var results = result.results || [];
+    var data = isEvidenceData(result.data) ? result.data : null;
 
     body.appendChild(buildSearchedFor(result));
+    if (data) {
+      body.appendChild(buildEvidenceData(data));
+    }
 
     if (results.length === 0) {
       body.appendChild(evidenceEl('p', 'evidence-muted',
-        'The Climateshed corpus doesn\'t cover this. That isn\'t the same as limited evidence. '
-        + 'Try editing the search, or add any sources you know of below.'));
+        (data ? 'No passages in the Climateshed corpus cover this. ' : 'The Climateshed corpus doesn\'t cover this. ')
+        + 'That isn\'t the same as limited evidence. Try editing the search, or add any sources you know of below.'));
       return;
     }
 
@@ -382,6 +396,184 @@
       }
     }));
     input.focus();
+  }
+
+  /**
+   * True if a search result's climate data has something to show. The server
+   * sends data only for a city or county claim that refers to a climate measure.
+   */
+  function isEvidenceData(data) {
+    return !!data && Array.isArray(data.measures) && data.measures.length > 0
+      && Array.isArray(data.decades) && data.decades.length > 0
+      && Array.isArray(data.scenarios) && data.scenarios.length > 0;
+  }
+
+  function isEvidenceNumber(value) {
+    return typeof value === 'number' && isFinite(value);
+  }
+
+  // Temperatures keep one decimal; day counts, degree days, and precipitation are whole numbers.
+  function evidenceDataDecimals(units) {
+    return units === '°F' ? 1 : 0;
+  }
+
+  function formatEvidenceDataValue(value, units) {
+    return isEvidenceNumber(value) ? value.toFixed(evidenceDataDecimals(units)) : '–';
+  }
+
+  /**
+   * Change from the baseline, worked out from the rounded values so it matches
+   * the numbers shown. Empty when either value is missing.
+   */
+  function formatEvidenceDataChange(value, baseline, units) {
+    if (!isEvidenceNumber(value) || !isEvidenceNumber(baseline)) {
+      return '';
+    }
+    var decimals = evidenceDataDecimals(units);
+    var change = Number(value.toFixed(decimals)) - Number(baseline.toFixed(decimals));
+    var size = Math.abs(change).toFixed(decimals);
+    if (Number(size) === 0) {
+      return '0';
+    }
+    return (change > 0 ? '+' : '-') + size;
+  }
+
+  /**
+   * Climate projections for the claim's city or county, from Climateshed data.
+   * Climateshed chose the measures and starting decade from the claim's wording;
+   * the numbers are shown as stored, rounded, with the change from the baseline.
+   */
+  function buildEvidenceData(data) {
+    var card = evidenceEl('div', 'evidence-result evidence-data');
+    var decade = data.decades.indexOf(data.decade) === -1 ? data.decades[0] : data.decade;
+    var period = String(data.baseline_period || '1981-2010').replace('-', '–');
+    var models = isEvidenceNumber(data.models) ? data.models : null;
+
+    card.appendChild(evidenceEl('div', 'evidence-result-title', 'Climate projections for ' + data.place));
+    card.appendChild(evidenceEl('div', 'evidence-result-meta',
+      'LOCA2 downscaled CMIP6' + (models ? ' · ' + models + '-model ensemble' : '') + ' · Climateshed data'));
+
+    var picker = evidenceEl('div', 'evidence-data-decade');
+    picker.appendChild(evidenceEl('span', '', 'Decade'));
+    var select = evidenceEl('select');
+    data.decades.forEach(function(option) {
+      var item = evidenceEl('option', '', option);
+      item.value = option;
+      select.appendChild(item);
+    });
+    select.value = decade;
+    picker.appendChild(select);
+    card.appendChild(picker);
+
+    if (!data.decade_from_claim) {
+      card.appendChild(evidenceEl('p', 'evidence-muted evidence-small',
+        'The claim doesn\'t name a decade the data covers, so this starts at the ' + decade + '.'));
+    }
+
+    var measures = evidenceEl('div');
+    card.appendChild(measures);
+
+    card.appendChild(evidenceEl('p', 'evidence-muted evidence-small',
+      'Scenarios: SSP2-4.5 is intermediate emissions, SSP3-7.0 high, and SSP5-8.5 very high. '
+      + 'Each value is a decade average: the median of the ' + (models ? models + ' ' : '')
+      + 'models, with the range from the 10th to 90th percentile. '
+      + 'The range shows only how the models differ, not the full uncertainty. '
+      + 'Change is from ' + period + '. Values are rounded.'));
+    if (data.nearest_cell) {
+      card.appendChild(evidenceEl('p', 'evidence-muted evidence-small',
+        'This place is smaller than the data grid, so its values come from the nearest grid cell.'));
+    }
+
+    var actions = evidenceEl('div', 'evidence-actions');
+    var source = data.source || {};
+    if (source.url && /^https?:\/\//i.test(source.url)) {
+      actions.appendChild(evidenceLink('About the data', source.url));
+    }
+    var add = evidenceButton('btn btn-secondary evidence-add-btn', 'Add as source', function() {
+      addEvidenceAsSource(evidenceDataSource(data, decade), add);
+    });
+    actions.appendChild(add);
+    card.appendChild(actions);
+
+    function showDecade() {
+      while (measures.firstChild) {
+        measures.removeChild(measures.firstChild);
+      }
+      data.measures.forEach(function(measure) {
+        measures.appendChild(buildEvidenceDataMeasure(measure, decade, data.scenarios, period));
+      });
+    }
+
+    select.addEventListener('change', function() {
+      decade = select.value;
+      showDecade();
+      // The source title names the decade, so another decade can be added as its own source.
+      add.disabled = false;
+      add.textContent = 'Add as source';
+    });
+    showDecade();
+
+    return card;
+  }
+
+  function buildEvidenceDataMeasure(measure, decade, scenarios, period) {
+    var block = evidenceEl('div', 'evidence-data-measure');
+    block.appendChild(evidenceEl('div', 'evidence-data-label',
+      measure.label + (measure.units ? ' (' + measure.units + ')' : '')));
+
+    var table = evidenceEl('table', 'evidence-data-table');
+    var head = evidenceEl('tr');
+    ['', 'Median', 'Model range', 'Change'].forEach(function(text) {
+      head.appendChild(evidenceEl('th', '', text));
+    });
+    table.appendChild(head);
+
+    var baseline = measure.baseline && isEvidenceNumber(measure.baseline.median) ? measure.baseline : null;
+    if (baseline) {
+      table.appendChild(buildEvidenceDataRow(period, baseline, null, measure.units));
+    }
+    var byScenario = (measure.projections && measure.projections[decade]) || {};
+    scenarios.forEach(function(scenario) {
+      table.appendChild(buildEvidenceDataRow(EVIDENCE_SCENARIO_LABELS[scenario] || scenario,
+        byScenario[scenario], baseline, measure.units));
+    });
+    block.appendChild(table);
+
+    if (!baseline) {
+      block.appendChild(evidenceEl('div', 'evidence-muted evidence-small',
+        'No ' + period + ' value: this measure is defined relative to that period.'));
+    }
+    return block;
+  }
+
+  function buildEvidenceDataRow(label, stats, baseline, units) {
+    var row = evidenceEl('tr');
+    row.appendChild(evidenceEl('th', '', label));
+    if (!stats || !isEvidenceNumber(stats.median)) {
+      var missing = evidenceEl('td', 'evidence-muted', 'No data');
+      missing.colSpan = 3;
+      row.appendChild(missing);
+      return row;
+    }
+    var range = isEvidenceNumber(stats.p10) && isEvidenceNumber(stats.p90)
+      ? formatEvidenceDataValue(stats.p10, units) + '–' + formatEvidenceDataValue(stats.p90, units)
+      : '';
+    row.appendChild(evidenceEl('td', '', formatEvidenceDataValue(stats.median, units)));
+    row.appendChild(evidenceEl('td', 'evidence-data-range', range));
+    row.appendChild(evidenceEl('td', '', baseline ? formatEvidenceDataChange(stats.median, baseline.median, units) : ''));
+    return row;
+  }
+
+  /** Source fields for a data card: the dataset, place, decade, and measures shown. */
+  function evidenceDataSource(data, decade) {
+    var source = data.source || {};
+    return {
+      title: (source.title || 'Climate projections') + ' for ' + data.place + ', ' + decade + ': '
+        + data.measures.map(function(measure) { return measure.label; }).join('; '),
+      publisher: source.publisher || '',
+      year: null,
+      url: source.url || ''
+    };
   }
 
   // PDF text extraction leaves hard line breaks and private-use symbol glyphs
@@ -454,8 +646,9 @@
   }
 
   /**
-   * Adds a search result to the Sources list, replacing an empty source card if
-   * there is one. Publisher and page are left for the author to fill in.
+   * Adds a search result or climate data card to the Sources list, replacing an
+   * empty source card if there is one. Publisher is filled in only when
+   * Climateshed knows it (climate data); page is left for the author.
    */
   function addEvidenceAsSource(item, button) {
     var cards = document.querySelectorAll('#sourceList .source-card');
@@ -477,7 +670,7 @@
 
     addSourceCard({
       title: item.title,
-      publisher: '',
+      publisher: item.publisher || '',
       year: item.year ? String(item.year) : '',
       page: '',
       url: item.url && /^https?:\/\//i.test(item.url) ? item.url : '',

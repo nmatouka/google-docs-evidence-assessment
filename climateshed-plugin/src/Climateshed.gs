@@ -369,7 +369,8 @@ function searchClimateshedEvidence(request) {
       documentCount: response.body.document_count || 0,
       searchQuery: response.body.search_query || query || claim,
       querySource: response.body.query_source || (query ? 'author' : 'claim'),
-      claimPlace: response.body.claim_place || null
+      claimPlace: response.body.claim_place || null,
+      data: response.body.data || null
     };
   });
 }
