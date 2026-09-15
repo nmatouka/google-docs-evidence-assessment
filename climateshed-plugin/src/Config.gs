@@ -44,6 +44,12 @@ const CONFIG = {
   PAID_TIERS: ['starter', 'pro'],
   EVIDENCE_RESULT_LIMIT: 8,
 
+  // Document context sent with a claim so search can tell what it's about.
+  // At most this much of the document leaves it with each search.
+  CONTEXT_TITLE_CHARS: 150,
+  CONTEXT_HEADING_CHARS: 200,
+  CONTEXT_PRECEDING_CHARS: 1150,
+
   // UserProperties keys: private to each Google user, never stored in the document.
   TOKEN_PROPERTY: 'climateshedToken',
   EMAIL_PROPERTY: 'climateshedEmail',

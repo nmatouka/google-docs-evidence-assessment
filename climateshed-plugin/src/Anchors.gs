@@ -258,6 +258,152 @@ function findLastTextChild(element) {
 }
 
 /**
+ * Collects the text around a claim so evidence search can tell what the claim
+ * is about: the document title, the nearest heading above it, and the text
+ * just before it (earlier in its paragraph, then the previous paragraph).
+ * Read-only: nothing in the document changes. Lengths are capped by the
+ * CONTEXT_*_CHARS settings, because this text leaves the document.
+ * @param {Document} doc
+ * @param {string} rangeName - The claim's named range (claim or pending).
+ * @returns {Object} { document_title, section_heading, preceding_text }
+ */
+function getClaimContext(doc, rangeName) {
+  var context = {
+    document_title: clipText(doc.getName(), CONFIG.CONTEXT_TITLE_CHARS, false),
+    section_heading: '',
+    preceding_text: ''
+  };
+
+  var namedRange = getNamedRange(doc, rangeName);
+  var elements = namedRange ? namedRange.getRange().getRangeElements() : [];
+  if (elements.length === 0) {
+    return context;
+  }
+
+  var first = elements[0];
+  var paragraph = findParagraphAncestor(first.getElement());
+  if (!paragraph) {
+    return context;
+  }
+
+  var before = [textBeforeInParagraph(paragraph, first)];
+  var sibling = paragraph.getPreviousSibling();
+  var steps = 0;
+
+  // Walk back to the nearest heading, keeping the first non-empty paragraph on the way.
+  while (sibling && steps < 200) {
+    steps++;
+    var heading = getHeadingText(sibling);
+    if (heading) {
+      context.section_heading = clipText(heading, CONFIG.CONTEXT_HEADING_CHARS, false);
+      break;
+    }
+    if (before.length < 2) {
+      var text = getBlockText(sibling);
+      if (text) {
+        before.unshift(text);
+      }
+    }
+    sibling = sibling.getPreviousSibling();
+  }
+
+  context.preceding_text = clipText(before.join(' '), CONFIG.CONTEXT_PRECEDING_CHARS, true);
+  return context;
+}
+
+/**
+ * Collapses whitespace and caps length.
+ * @param {string} text
+ * @param {number} maxChars
+ * @param {boolean} keepEnd - Keep the end (text nearest the claim) instead of the start.
+ * @returns {string}
+ */
+function clipText(text, maxChars, keepEnd) {
+  var clean = String(text || '').replace(/\s+/g, ' ').trim();
+  if (clean.length <= maxChars) {
+    return clean;
+  }
+  return (keepEnd ? clean.substring(clean.length - maxChars) : clean.substring(0, maxChars)).trim();
+}
+
+/**
+ * @param {Element} element
+ * @returns {Paragraph|ListItem|null} The paragraph or list item containing the element.
+ */
+function findParagraphAncestor(element) {
+  var node = element;
+  while (node) {
+    var type = node.getType();
+    if (type === DocumentApp.ElementType.PARAGRAPH) {
+      return node.asParagraph();
+    }
+    if (type === DocumentApp.ElementType.LIST_ITEM) {
+      return node.asListItem();
+    }
+    node = node.getParent();
+  }
+  return null;
+}
+
+/**
+ * Text in the same paragraph before the start of a claim.
+ * @param {Paragraph|ListItem} paragraph
+ * @param {RangeElement} rangeElement - The claim's first range element.
+ * @returns {string}
+ */
+function textBeforeInParagraph(paragraph, rangeElement) {
+  var element = rangeElement.getElement();
+  if (element.getType() !== DocumentApp.ElementType.TEXT) {
+    return ''; // The claim starts at the beginning of the paragraph.
+  }
+
+  try {
+    var parts = [];
+    var index = paragraph.getChildIndex(element);
+    for (var i = 0; i < index; i++) {
+      var child = paragraph.getChild(i);
+      if (child.getType() === DocumentApp.ElementType.TEXT) {
+        parts.push(child.asText().getText());
+      }
+    }
+    if (rangeElement.isPartial()) {
+      parts.push(element.asText().getText().substring(0, rangeElement.getStartOffset()));
+    }
+    return parts.join('');
+  } catch (err) {
+    Logger.log('textBeforeInParagraph: ' + err.message);
+    return '';
+  }
+}
+
+/**
+ * @param {Element} element - A body-level block.
+ * @returns {string} The heading text if the block is a non-empty heading, else ''.
+ */
+function getHeadingText(element) {
+  if (element.getType() !== DocumentApp.ElementType.PARAGRAPH) {
+    return '';
+  }
+  var paragraph = element.asParagraph();
+  return paragraph.getHeading() !== DocumentApp.ParagraphHeading.NORMAL ? paragraph.getText().trim() : '';
+}
+
+/**
+ * @param {Element} element - A body-level block.
+ * @returns {string} Its text if it's a paragraph or list item, else ''.
+ */
+function getBlockText(element) {
+  var type = element.getType();
+  if (type === DocumentApp.ElementType.PARAGRAPH) {
+    return element.asParagraph().getText().trim();
+  }
+  if (type === DocumentApp.ElementType.LIST_ITEM) {
+    return element.asListItem().getText().trim();
+  }
+  return '';
+}
+
+/**
  * Inserts a marker immediately after a claim and anchors it with a named range.
  * @param {Document} doc
  * @param {string} id - Assessment UUID.

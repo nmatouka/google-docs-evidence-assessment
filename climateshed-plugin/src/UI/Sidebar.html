@@ -123,11 +123,11 @@
     function init() {
       if (isEditMode) {
         populateEditForm();
-        startEvidencePanel(editData.claimText);
+        startEvidencePanel({ text: editData.claimText, assessmentId: editData.id });
       } else if (selectionData && selectionData.text) {
         document.getElementById('claimDisplay').textContent = selectionData.text;
         addSourceCard(null);
-        startEvidencePanel(selectionData.text);
+        startEvidencePanel({ text: selectionData.text, pendingRangeName: selectionData.pendingRangeName });
       } else {
         // No selection when the sidebar opened: let the author select text, then capture it.
         document.getElementById('captureRow').style.display = 'block';
@@ -152,7 +152,7 @@
             selectionData = result;
             document.getElementById('claimDisplay').textContent = result.text;
             document.getElementById('captureRow').style.display = 'none';
-            startEvidencePanel(result.text);
+            startEvidencePanel({ text: result.text, pendingRangeName: result.pendingRangeName });
             document.getElementById('saveBtn').disabled = false;
           } else {
             showError('noSelectionError');

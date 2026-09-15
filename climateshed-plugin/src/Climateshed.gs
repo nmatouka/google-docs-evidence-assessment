@@ -288,12 +288,18 @@ function signOutOfClimateshed() {
 
 /**
  * Searches the Climateshed corpus for passages related to a claim.
- * Only the claim text is sent; nothing else from the document leaves it.
- * @param {string} claimText
- * @returns {Object} { success, results, documentCount } or
- *   { success: false, error, signedOut?, accessDenied?, accountUrl? }
+ *
+ * Sends the claim plus a short piece of the surrounding document (its title,
+ * the nearest heading above the claim, and the text just before it) so
+ * Climateshed can tell what the claim is about. Nothing else from the document
+ * is sent. If the author edited the search text, that is sent instead of the
+ * context and searched as written.
+ * @param {Object|string} request - { claimText, pendingRangeName?, assessmentId?, query? }.
+ *   A plain string is treated as the claim text.
+ * @returns {Object} { success, results, documentCount, searchQuery, querySource } or
+ *   { success: false, error, signedOut?, accessDenied?, permissionRequired?, accountUrl? }
  */
-function searchClimateshedEvidence(claimText) {
+function searchClimateshedEvidence(request) {
   return runForSidebar(function() {
     var missingPermission = checkConnectPermission();
     if (missingPermission) {
@@ -305,7 +311,12 @@ function searchClimateshedEvidence(claimText) {
       return { success: false, signedOut: true, error: 'Sign in to Climateshed to search.' };
     }
 
-    var claim = cleanString(claimText).replace(/\s+/g, ' ');
+    if (typeof request === 'string') {
+      request = { claimText: request };
+    }
+    request = request || {};
+
+    var claim = cleanString(request.claimText).replace(/\s+/g, ' ');
     if (claim.length < 10) {
       return { success: false, error: 'Select a longer claim to search (at least 10 characters).' };
     }
@@ -313,8 +324,21 @@ function searchClimateshedEvidence(claimText) {
       return { success: false, error: 'This claim is too long to search (2,000 characters at most). Select a shorter passage.' };
     }
 
-    var response = callClimateshedApi('post', '/evidence/search',
-      { claim: claim, top_k: CONFIG.EVIDENCE_RESULT_LIMIT }, token);
+    var payload = { claim: claim, top_k: CONFIG.EVIDENCE_RESULT_LIMIT };
+    var query = cleanString(request.query).replace(/\s+/g, ' ');
+    if (query) {
+      if (query.length < 10 || query.length > 2000) {
+        return { success: false, error: 'Search text must be between 10 and 2,000 characters.' };
+      }
+      payload.query = query;
+    } else {
+      var context = getSearchContext(request);
+      if (context) {
+        payload.context = context;
+      }
+    }
+
+    var response = callClimateshedApi('post', '/evidence/search', payload, token);
     var detail = response.body && response.body.detail;
 
     // 403 without a reason code means the token itself was rejected.
@@ -338,7 +362,35 @@ function searchClimateshedEvidence(claimText) {
     return {
       success: true,
       results: Array.isArray(response.body.results) ? response.body.results : [],
-      documentCount: response.body.document_count || 0
+      documentCount: response.body.document_count || 0,
+      searchQuery: response.body.search_query || query || claim,
+      querySource: response.body.query_source || (query ? 'author' : 'claim')
     };
   });
+}
+
+/**
+ * Finds the claim's anchor from a search request and collects its document context.
+ * @param {Object} request - { pendingRangeName?, assessmentId? }
+ * @returns {Object|null} Context with at least one non-empty field, or null.
+ */
+function getSearchContext(request) {
+  var rangeName = null;
+  if (parsePendingRangeName(request.pendingRangeName)) {
+    rangeName = request.pendingRangeName;
+  } else if (typeof request.assessmentId === 'string' && /^[0-9a-fA-F-]{36}$/.test(request.assessmentId)) {
+    rangeName = claimRangeName(request.assessmentId);
+  }
+  if (!rangeName) {
+    return null;
+  }
+
+  try {
+    var context = getClaimContext(DocumentApp.getActiveDocument(), rangeName);
+    return context.document_title || context.section_heading || context.preceding_text ? context : null;
+  } catch (err) {
+    // Search the claim on its own rather than fail the search.
+    Logger.log('getSearchContext: ' + err.message);
+    return null;
+  }
 }

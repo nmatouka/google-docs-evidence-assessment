@@ -14,7 +14,9 @@ A paid Google Docs add-on built from the free Evidence Assessment add-on (`../sr
 - Sign-in uses the Climateshed email-code login (`/auth/otp/request`, then `/auth/otp/verify`). The 30-day session token is stored in UserProperties, which only that Google user can read, and never in the document.
 - `CONFIG.API_BASE_URL` points at the dev API (`ca-climate-api-dev.fly.dev`). Every host the plugin calls must also be listed in `urlFetchWhitelist` in `appsscript.json`.
 - Evidence search (`POST /evidence/search` in `commercial-CA-climate-rag`, `app/evidence.py`) needs an active Starter or Pro subscription plus `users.evidence_access`, granted by hand in Supabase. The server enforces this; the plugin pre-checks it only to show a clearer message.
-- The search runs when the author opens a claim. It returns corpus passages verbatim, with no ratings and no generated text. A source is added only when the author clicks "Add as source", and it is stored with `origin: 'climateshed'`.
+- The search runs when the author opens a claim. The plugin sends the claim plus a short piece of context: the document title, the nearest heading above the claim, and the text just before it (`getClaimContext` in `Anchors.gs`, capped by `CONTEXT_*_CHARS` in `Config.gs`). Nothing else from the document is sent.
+- The backend has Claude rewrite the claim into a standalone query using that context. The panel shows the searched text and lets the author edit it and search again; an edited search is sent without context and searched as written.
+- Passages come back verbatim, with no ratings. A source is added only when the author clicks "Add as source", and it is stored with `origin: 'climateshed'`.
 - Manual assessment works without signing in. Only the evidence panel needs an account.
 - Sidebar functions in `Climateshed.gs` return `{ success, error }` instead of using `safeExecute()`, so network errors show inline rather than as a modal dialog.
 

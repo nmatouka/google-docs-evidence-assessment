@@ -14,10 +14,11 @@
 
 <script>
   var evidenceState = {
-    claimText: null,     // claim currently shown in the sidebar
-    account: null,       // last successful result of getClimateshedAccount()
-    pendingEmail: '',    // email a sign-in code was sent to
-    searchedClaim: null  // claim whose results are currently displayed
+    claim: null,          // { text, pendingRangeName?, assessmentId? } for the claim in the sidebar
+    account: null,        // last successful result of getClimateshedAccount()
+    pendingEmail: '',     // email a sign-in code was sent to
+    searchedClaim: null,  // text of the claim whose results are displayed
+    lastResult: null      // last successful search result, to return to after editing the search
   };
 
   var EVIDENCE_DOC_TYPE_LABELS = {
@@ -31,15 +32,21 @@
     data: 'Data'
   };
 
+  var EVIDENCE_QUERY_LABELS = {
+    rewritten: 'Searched for (reworded using the heading and nearby text):',
+    author: 'Searched for (your edited search):',
+    claim: 'Searched for your claim as written:'
+  };
+
   var EVIDENCE_EXCERPT_CHARS = 280;
 
   /**
    * Starts or refreshes the panel for a claim. The sidebar calls this when a
    * claim is shown: on open, after Capture Selection, and in edit mode.
-   * @param {string|null} claimText
+   * @param {Object|null} claim - { text, pendingRangeName?, assessmentId? }
    */
-  function startEvidencePanel(claimText) {
-    evidenceState.claimText = claimText || null;
+  function startEvidencePanel(claim) {
+    evidenceState.claim = claim && claim.text ? claim : null;
     document.getElementById('evidenceSignOutBtn').onclick = signOutOfEvidence;
 
     if (evidenceState.account) {
@@ -51,7 +58,7 @@
     google.script.run
       .withSuccessHandler(onEvidenceAccount)
       .withFailureHandler(function(err) {
-        renderEvidenceError(err.message, function() { startEvidencePanel(evidenceState.claimText); });
+        renderEvidenceError(err.message, function() { startEvidencePanel(evidenceState.claim); });
       })
       .getClimateshedAccount();
   }
@@ -66,7 +73,7 @@
       return;
     }
     if (!result || !result.success) {
-      renderEvidenceError(result && result.error, function() { startEvidencePanel(evidenceState.claimText); });
+      renderEvidenceError(result && result.error, function() { startEvidencePanel(evidenceState.claim); });
       return;
     }
 
@@ -77,24 +84,36 @@
       renderEvidenceSignIn(result.expired ? 'Your Climateshed session expired. Sign in again to search.' : '');
     } else if (!result.access.allowed) {
       renderEvidenceNoAccess(result.access);
-    } else if (!evidenceState.claimText) {
+    } else if (!evidenceState.claim) {
       renderEvidenceMessage('Select a claim to search Climateshed for sources.');
-    } else if (evidenceState.searchedClaim !== evidenceState.claimText) {
-      runEvidenceSearch();
+    } else if (evidenceState.searchedClaim !== evidenceState.claim.text) {
+      runEvidenceSearch(null);
     }
   }
 
-  function runEvidenceSearch() {
-    var claim = evidenceState.claimText;
-    renderEvidenceMessage('Searching Climateshed... The first search after a quiet period can take up to 30 seconds.', true);
+  /**
+   * Searches for the current claim. Climateshed rewords the claim using its
+   * heading and nearby text, unless the author edited the search text.
+   * @param {string|null} query - Search text the author edited, searched as written.
+   */
+  function runEvidenceSearch(query) {
+    var claim = evidenceState.claim;
+    if (!claim) {
+      return;
+    }
+    var retry = function() { runEvidenceSearch(query); };
+    renderEvidenceMessage(query
+      ? 'Searching Climateshed for your edited search...'
+      : 'Searching Climateshed... The first search after a quiet period can take up to 30 seconds.', true);
 
     google.script.run
       .withSuccessHandler(function(result) {
-        if (claim !== evidenceState.claimText) {
+        if (claim !== evidenceState.claim) {
           return; // A different claim was captured while this search ran.
         }
         if (result && result.success) {
-          evidenceState.searchedClaim = claim;
+          evidenceState.searchedClaim = claim.text;
+          evidenceState.lastResult = result;
           renderEvidenceResults(result);
         } else if (result && result.permissionRequired) {
           renderEvidencePermission(result);
@@ -107,15 +126,20 @@
           }
           renderEvidenceNoAccess(access);
         } else {
-          renderEvidenceError(result && result.error, runEvidenceSearch);
+          renderEvidenceError(result && result.error, retry);
         }
       })
       .withFailureHandler(function(err) {
-        if (claim === evidenceState.claimText) {
-          renderEvidenceError(err.message, runEvidenceSearch);
+        if (claim === evidenceState.claim) {
+          renderEvidenceError(err.message, retry);
         }
       })
-      .searchClimateshedEvidence(claim);
+      .searchClimateshedEvidence({
+        claimText: claim.text,
+        pendingRangeName: claim.pendingRangeName || null,
+        assessmentId: claim.assessmentId || null,
+        query: query || null
+      });
   }
 
   /**
@@ -163,7 +187,7 @@
   function evidenceButton(className, label, onClick) {
     var button = evidenceEl('button', className, label);
     button.type = 'button';
-    button.addEventListener('click', onClick);
+    button.addEventListener('click', function() { onClick(); });
     return button;
   }
 
@@ -271,7 +295,7 @@
       'After allowing it, come back and click Try again. On Google\'s permission screen, tick every permission.'));
     body.appendChild(evidenceButton('btn btn-secondary btn-small', 'Try again', function() {
       evidenceState.account = null;
-      startEvidencePanel(evidenceState.claimText);
+      startEvidencePanel(evidenceState.claim);
     }));
   }
 
@@ -287,9 +311,12 @@
     var body = resetEvidenceBody();
     var results = result.results || [];
 
+    body.appendChild(buildSearchedFor(result));
+
     if (results.length === 0) {
       body.appendChild(evidenceEl('p', 'evidence-muted',
-        'The Climateshed corpus doesn\'t cover this claim. That isn\'t the same as limited evidence. Add any sources you know of below.'));
+        'The Climateshed corpus doesn\'t cover this. That isn\'t the same as limited evidence. '
+        + 'Try editing the search, or add any sources you know of below.'));
       return;
     }
 
@@ -304,6 +331,51 @@
 
     body.appendChild(evidenceEl('p', 'evidence-muted evidence-small',
       'Passages are quoted from the Climateshed corpus. Check the original document before citing it.'));
+  }
+
+  /**
+   * Shows the text that was actually searched, so the author can see how the
+   * claim was read, with a way to edit it and search again.
+   */
+  function buildSearchedFor(result) {
+    var box = evidenceEl('div', 'evidence-query');
+    box.appendChild(evidenceEl('div', 'evidence-query-label',
+      EVIDENCE_QUERY_LABELS[result.querySource] || 'Searched for:'));
+    box.appendChild(evidenceEl('div', 'evidence-query-text', result.searchQuery || ''));
+    box.appendChild(evidenceButton('link-btn', 'Edit search', function() {
+      renderEvidenceQueryEditor(result.searchQuery || (evidenceState.claim ? evidenceState.claim.text : ''));
+    }));
+    return box;
+  }
+
+  function renderEvidenceQueryEditor(text) {
+    var body = resetEvidenceBody();
+    body.appendChild(evidenceEl('p', 'evidence-muted',
+      'Edit what to search for. This changes only the search, not your document or your claim.'));
+
+    var input = evidenceEl('textarea');
+    input.rows = 3;
+    input.value = text;
+    body.appendChild(input);
+
+    var error = evidenceEl('p', 'evidence-error');
+    body.appendChild(evidenceButton('btn btn-primary btn-small', 'Search again', function() {
+      var value = input.value.replace(/\s+/g, ' ').trim();
+      if (value.length < 10 || value.length > 2000) {
+        error.textContent = 'Search text must be between 10 and 2,000 characters.';
+        return;
+      }
+      runEvidenceSearch(value);
+    }));
+    body.appendChild(error);
+    body.appendChild(evidenceButton('link-btn', 'Cancel', function() {
+      if (evidenceState.lastResult) {
+        renderEvidenceResults(evidenceState.lastResult);
+      } else {
+        runEvidenceSearch(null);
+      }
+    }));
+    input.focus();
   }
 
   function buildEvidenceResult(item) {
@@ -331,8 +403,7 @@
       });
       actions.appendChild(toggle);
     }
-    var hasLink = item.url && /^https?:\/\//i.test(item.url);
-    if (hasLink) {
+    if (item.url && /^https?:\/\//i.test(item.url)) {
       actions.appendChild(evidenceLink('Open document', item.url));
     }
     var add = evidenceButton('btn btn-secondary evidence-add-btn', 'Add as source', function() {
@@ -393,6 +464,7 @@
     google.script.run
       .withSuccessHandler(function() {
         evidenceState.searchedClaim = null;
+        evidenceState.lastResult = null;
         onEvidenceAccount({ success: true, signedIn: false });
       })
       .withFailureHandler(function(err) { renderEvidenceError(err.message, null); })
