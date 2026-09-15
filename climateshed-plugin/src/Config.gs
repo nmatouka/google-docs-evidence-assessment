@@ -44,6 +44,11 @@ const CONFIG = {
   PAID_TIERS: ['starter', 'pro'],
   EVIDENCE_RESULT_LIMIT: 8,
 
+  // Source labels: the passages from one search are sent back to be labeled.
+  // Keep in step with MAX_PASSAGES and MAX_PASSAGE_CHARS in app/evidence_relate.py.
+  EVIDENCE_RELATE_MAX_PASSAGES: 10,
+  EVIDENCE_RELATE_PASSAGE_CHARS: 12000,
+
   // Document context sent with a claim so search can tell what it's about.
   // At most this much of the document leaves it with each search.
   CONTEXT_TITLE_CHARS: 150,

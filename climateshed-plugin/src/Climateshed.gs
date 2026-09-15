@@ -343,24 +343,11 @@ function searchClimateshedEvidence(request) {
     }
 
     var response = callClimateshedApi('post', '/evidence/search', payload, token);
-    var detail = response.body && response.body.detail;
-
-    // 403 without a reason code means the token itself was rejected.
-    if (response.status === 401 || (response.status === 403 && !(detail && detail.code))) {
-      clearStoredSession();
-      return { success: false, signedOut: true, error: 'Your Climateshed session expired. Sign in again.' };
-    }
-    if (response.status === 403) {
-      return { success: false, accessDenied: true, error: detail.message, accountUrl: CONFIG.ACCOUNT_URL };
-    }
-    if (response.status === 429) {
-      return { success: false, error: 'Too many searches in a short time. Wait a minute and try again.' };
-    }
-    if (response.status !== 200 || !response.body) {
-      return {
-        success: false,
-        error: apiErrorMessage(response.body, 'Climateshed search is unavailable right now. Try again in a moment.')
-      };
+    var failure = evidenceApiFailure(response,
+      'Too many searches in a short time. Wait a minute and try again.',
+      'Climateshed search is unavailable right now. Try again in a moment.');
+    if (failure) {
+      return failure;
     }
 
     return {
@@ -373,6 +360,90 @@ function searchClimateshedEvidence(request) {
       data: response.body.data || null
     };
   });
+}
+
+/**
+ * Asks Climateshed how each passage from a search bears on the claim: whether
+ * it supports, qualifies, or contradicts it, or doesn't address it, with the
+ * words each label rests on. Runs only when the author asks. Sends the claim,
+ * the searched text, and the passages that search returned; nothing else from
+ * the document.
+ * @param {Object} request - { claimText, searchQuery?, passages: string[] }
+ * @returns {Object} { success, relations } with one { relation, quote } per passage, in order, or
+ *   { success: false, error, signedOut?, accessDenied?, permissionRequired?, accountUrl? }
+ */
+function relateClimateshedEvidence(request) {
+  return runForSidebar(function() {
+    var missingPermission = checkConnectPermission();
+    if (missingPermission) {
+      return missingPermission;
+    }
+
+    var token = getStoredToken();
+    if (!token) {
+      return { success: false, signedOut: true, error: 'Sign in to Climateshed to check sources.' };
+    }
+
+    request = request || {};
+    var claim = cleanString(request.claimText).replace(/\s+/g, ' ');
+    if (claim.length < 10 || claim.length > 2000) {
+      return { success: false, error: 'The claim must be between 10 and 2,000 characters to check its sources.' };
+    }
+    var passages = Array.isArray(request.passages) ? request.passages.map(function(passage) {
+      return cleanString(passage).substring(0, CONFIG.EVIDENCE_RELATE_PASSAGE_CHARS);
+    }) : [];
+    var hasBlankPassage = passages.some(function(passage) { return !passage; });
+    if (passages.length === 0 || passages.length > CONFIG.EVIDENCE_RELATE_MAX_PASSAGES || hasBlankPassage) {
+      return { success: false, error: 'There are no passages to check. Search again, then try once more.' };
+    }
+
+    var payload = { claim: claim, passages: passages };
+    var searchQuery = cleanString(request.searchQuery).replace(/\s+/g, ' ').substring(0, 2000);
+    if (searchQuery) {
+      payload.search_query = searchQuery;
+    }
+
+    var response = callClimateshedApi('post', '/evidence/relate', payload, token);
+    var failure = evidenceApiFailure(response,
+      'Too many requests in a short time. Wait a minute and try again.',
+      'Source labels are unavailable right now. Try again in a moment.');
+    if (failure) {
+      return failure;
+    }
+
+    var relations = response.body.relations;
+    if (!Array.isArray(relations) || relations.length !== passages.length) {
+      return { success: false, error: 'Climateshed sent labels that don\'t match the passages. Try again.' };
+    }
+    return { success: true, relations: relations };
+  });
+}
+
+/**
+ * Turns an unsuccessful evidence API response into the panel's error result.
+ * @param {Object} response - From callClimateshedApi().
+ * @param {string} rateLimitMessage - Shown when Climateshed asks the author to slow down.
+ * @param {string} unavailableMessage - Shown for other failures without a readable detail.
+ * @returns {Object|null} { success: false, ... }, or null if the response succeeded.
+ */
+function evidenceApiFailure(response, rateLimitMessage, unavailableMessage) {
+  var detail = response.body && response.body.detail;
+
+  // 403 without a reason code means the token itself was rejected.
+  if (response.status === 401 || (response.status === 403 && !(detail && detail.code))) {
+    clearStoredSession();
+    return { success: false, signedOut: true, error: 'Your Climateshed session expired. Sign in again.' };
+  }
+  if (response.status === 403) {
+    return { success: false, accessDenied: true, error: detail.message, accountUrl: CONFIG.ACCOUNT_URL };
+  }
+  if (response.status === 429) {
+    return { success: false, error: rateLimitMessage };
+  }
+  if (response.status !== 200 || !response.body) {
+    return { success: false, error: apiErrorMessage(response.body, unavailableMessage) };
+  }
+  return null;
 }
 
 /**

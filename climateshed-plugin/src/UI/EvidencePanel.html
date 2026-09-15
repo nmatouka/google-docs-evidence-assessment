@@ -18,7 +18,7 @@
     account: null,        // last successful result of getClimateshedAccount()
     pendingEmail: '',     // email a sign-in code was sent to
     searchedClaim: null,  // text of the claim whose results are displayed
-    lastResult: null      // last successful search result, to return to after editing the search
+    lastResult: null      // last successful search result (with .relations once labeled), to return to after editing the search
   };
 
   var EVIDENCE_DOC_TYPE_LABELS = {
@@ -42,6 +42,13 @@
     ssp245: 'SSP2-4.5',
     ssp370: 'SSP3-7.0',
     ssp585: 'SSP5-8.5'
+  };
+
+  // Passages labeled does_not_address are hidden, so they have no badge.
+  var EVIDENCE_RELATION_LABELS = {
+    supports: 'Supports the claim',
+    qualifies: 'Qualifies the claim',
+    contradicts: 'Contradicts the claim'
   };
 
   var EVIDENCE_EXCERPT_CHARS = 280;
@@ -125,18 +132,8 @@
           evidenceState.searchedClaim = claim.text;
           evidenceState.lastResult = result;
           renderEvidenceResults(result);
-        } else if (result && result.permissionRequired) {
-          renderEvidencePermission(result);
-        } else if (result && result.signedOut) {
-          onEvidenceAccount({ success: true, signedIn: false, expired: true });
-        } else if (result && result.accessDenied) {
-          var access = { allowed: false, message: result.error, accountUrl: result.accountUrl };
-          if (evidenceState.account) {
-            evidenceState.account.access = access;
-          }
-          renderEvidenceNoAccess(access);
         } else {
-          renderEvidenceError(result && result.error, retry);
+          renderEvidenceFailure(result, retry);
         }
       })
       .withFailureHandler(function(err) {
@@ -152,6 +149,28 @@
         // An edited search keeps the place found for the claim, for result ordering.
         place: query && evidenceState.lastResult ? evidenceState.lastResult.claimPlace || null : null
       });
+  }
+
+  /**
+   * Shows the panel state for a failed Climateshed call: the permission
+   * prompt, sign-in, no access, or an error with an optional retry.
+   * @param {Object|null} result - { success: false, ... } from a Climateshed.gs function.
+   * @param {Function|null} retry
+   */
+  function renderEvidenceFailure(result, retry) {
+    if (result && result.permissionRequired) {
+      renderEvidencePermission(result);
+    } else if (result && result.signedOut) {
+      onEvidenceAccount({ success: true, signedIn: false, expired: true });
+    } else if (result && result.accessDenied) {
+      var access = { allowed: false, message: result.error, accountUrl: result.accountUrl };
+      if (evidenceState.account) {
+        evidenceState.account.access = access;
+      }
+      renderEvidenceNoAccess(access);
+    } else {
+      renderEvidenceError(result && result.error, retry);
+    }
   }
 
   /**
@@ -323,6 +342,8 @@
     var body = resetEvidenceBody();
     var results = result.results || [];
     var data = isEvidenceData(result.data) ? result.data : null;
+    var relations = evidenceRelations(result);
+    var visible = visibleEvidenceResults(results, relations);
 
     body.appendChild(buildSearchedFor(result));
     if (data) {
@@ -336,18 +357,137 @@
       return;
     }
 
+    if (visible.length === 0) {
+      body.appendChild(evidenceEl('p', 'evidence-muted',
+        'None of the ' + results.length + ' passages address the claim directly, so they\'re hidden. '
+        + 'That isn\'t the same as limited evidence. Try editing the search, or add any sources you know of below.'));
+      return;
+    }
+
+    var documentCount = countEvidenceDocuments(visible.map(function(entry) { return entry.item; }));
     body.appendChild(evidenceEl('p', 'evidence-muted',
-      results.length + ' passage' + (results.length === 1 ? '' : 's') + ' from '
-      + result.documentCount + ' document' + (result.documentCount === 1 ? '' : 's')
+      visible.length + ' passage' + (visible.length === 1 ? '' : 's') + ' from '
+      + documentCount + ' document' + (documentCount === 1 ? '' : 's')
       + (result.claimPlace ? ', local sources first' : ', most relevant first')
       + ' (up to 2 passages per document). Nothing is added to your assessment unless you choose it.'));
 
-    results.forEach(function(item) {
-      body.appendChild(buildEvidenceResult(item, result.claimPlace));
+    if (relations) {
+      var hidden = results.length - visible.length;
+      body.appendChild(evidenceEl('p', 'evidence-muted evidence-small',
+        'Labels are from Climateshed\'s AI, reading only each passage\'s text. Check the passage before relying on one.'
+        + (hidden === 1 ? ' 1 passage that doesn\'t address the claim is hidden.' : '')
+        + (hidden > 1 ? ' ' + hidden + ' passages that don\'t address the claim are hidden.' : '')));
+    }
+
+    visible.forEach(function(entry) {
+      body.appendChild(buildEvidenceResult(entry.item, result.claimPlace, entry.relation));
     });
+
+    if (!relations) {
+      body.appendChild(buildEvidenceRelate(result));
+    }
 
     body.appendChild(evidenceEl('p', 'evidence-muted evidence-small',
       'Passages are quoted from the Climateshed corpus. Check the original document before citing it.'));
+  }
+
+  /**
+   * The labels for a search result, or null if it hasn't been labeled (or the
+   * labels don't line up with its passages).
+   */
+  function evidenceRelations(result) {
+    var relations = result.relations;
+    return Array.isArray(relations) && relations.length === (result.results || []).length ? relations : null;
+  }
+
+  /**
+   * The passages to show, each with its label. Passages labeled as not
+   * addressing the claim are left out.
+   * @param {Object[]} results
+   * @param {Object[]|null} relations - One { relation, quote } per result, or null before labeling.
+   * @returns {Object[]} [{ item, relation }], where relation is null before labeling.
+   */
+  function visibleEvidenceResults(results, relations) {
+    var visible = [];
+    results.forEach(function(item, index) {
+      var relation = relations ? relations[index] : null;
+      if (!relation || relation.relation !== 'does_not_address') {
+        visible.push({ item: item, relation: relation });
+      }
+    });
+    return visible;
+  }
+
+  /** Counts distinct documents, matching the server: the same title and link. */
+  function countEvidenceDocuments(items) {
+    var seen = {};
+    items.forEach(function(item) {
+      seen[JSON.stringify([item.title, item.url || null])] = true;
+    });
+    return Object.keys(seen).length;
+  }
+
+  /**
+   * Button that asks Climateshed how each passage bears on the claim. Labels
+   * are requested only when the author clicks, because each request is a
+   * separate AI reading of every passage.
+   */
+  function buildEvidenceRelate(result) {
+    var box = evidenceEl('div', 'evidence-relate');
+    var error = evidenceEl('p', 'evidence-error');
+    var button = evidenceButton('btn btn-secondary btn-small', 'How do these sources relate?', function() {
+      var claim = evidenceState.claim;
+      if (!claim) {
+        return;
+      }
+      var isCurrent = function() {
+        return claim === evidenceState.claim && result === evidenceState.lastResult;
+      };
+      var fail = function(message) {
+        error.textContent = message || 'Something went wrong reaching Climateshed.';
+        button.disabled = false;
+        button.textContent = 'Try again';
+      };
+
+      error.textContent = '';
+      button.disabled = true;
+      button.textContent = 'Reading the passages...';
+
+      google.script.run
+        .withSuccessHandler(function(response) {
+          if (!isCurrent()) {
+            return; // The claim or the search changed while the passages were read.
+          }
+          if (response && response.success) {
+            result.relations = response.relations;
+            // If the author moved on (for example, to edit the search), the labels show when they come back.
+            if (document.body.contains(box)) {
+              renderEvidenceResults(result);
+            }
+          } else if (response && (response.permissionRequired || response.signedOut || response.accessDenied)) {
+            renderEvidenceFailure(response, null);
+          } else {
+            fail(response && response.error);
+          }
+        })
+        .withFailureHandler(function(err) {
+          if (isCurrent()) {
+            fail(err.message);
+          }
+        })
+        .relateClimateshedEvidence({
+          claimText: claim.text,
+          searchQuery: result.searchQuery || null,
+          passages: (result.results || []).map(function(item) { return item.passage || ''; })
+        });
+    });
+
+    box.appendChild(button);
+    box.appendChild(evidenceEl('p', 'evidence-muted evidence-small',
+      'Climateshed\'s AI reads each passage and labels whether it supports, qualifies, or contradicts your claim, '
+      + 'quoting the words it relied on. Passages that don\'t address the claim are hidden. This can take up to a minute.'));
+    box.appendChild(error);
+    return box;
   }
 
   /**
@@ -442,6 +582,7 @@
    * Climate projections for the claim's city or county, from Climateshed data.
    * Climateshed chose the measures and starting decade from the claim's wording;
    * the numbers are shown as stored, rounded, with the change from the baseline.
+   * The card is never labeled: whether the numbers match the claim is the author's call.
    */
   function buildEvidenceData(data) {
     var card = evidenceEl('div', 'evidence-result evidence-data');
@@ -598,7 +739,28 @@
       .join('\n\n');
   }
 
-  function buildEvidenceResult(item, claimPlace) {
+  /**
+   * A passage's label and the quote it rests on, or a note that the passage
+   * has no confirmed label.
+   */
+  function buildEvidenceRelation(relation) {
+    var label = EVIDENCE_RELATION_LABELS[relation.relation];
+    if (!label || !relation.quote) {
+      return evidenceEl('div', 'evidence-muted evidence-small evidence-relation-none',
+        'No label: Climateshed couldn\'t confirm a quote from this passage to base one on.');
+    }
+    var box = evidenceEl('div', 'evidence-relation-box');
+    box.appendChild(evidenceEl('span', 'evidence-relation evidence-relation-' + relation.relation, label));
+    box.appendChild(evidenceEl('div', 'evidence-relation-quote', '“' + relation.quote + '”'));
+    return box;
+  }
+
+  /**
+   * @param {Object} item - A search result.
+   * @param {string|null} claimPlace - The place the claim is about.
+   * @param {Object|null} relation - The passage's { relation, quote }, or null before labeling.
+   */
+  function buildEvidenceResult(item, claimPlace, relation) {
     var card = evidenceEl('div', 'evidence-result');
     card.appendChild(evidenceEl('div', 'evidence-result-title', item.title));
 
@@ -617,6 +779,9 @@
       // Same name at a different level, e.g. a city plan for a claim about the county.
       card.appendChild(evidenceEl('div', 'evidence-place evidence-place-related',
         claimPlace ? 'Related place: your claim is about ' + claimPlace : 'Related place'));
+    }
+    if (relation) {
+      card.appendChild(buildEvidenceRelation(relation));
     }
 
     var passage = formatPassage(item.passage || '');

@@ -18,6 +18,7 @@ A paid Google Docs add-on built from the free Evidence Assessment add-on (`../sr
 - The backend has Claude rewrite the claim into a standalone query using that context. The panel shows the searched text and lets the author edit it and search again; an edited search is sent without context and searched as written.
 - The backend recognizes local plans by filename (`CA_City_<Place>_<Year>.pdf`). When the claim is about a place, that place's plans are also searched. Results show their place and are ordered: same place, then the same name at a different level (a city plan for a county claim, labeled "Related place"), then statewide and general sources, then other places' plans labeled "Different place from your claim". At most 2 passages come from any one document.
 - When the claim is about a California city or county and refers to a climate measure, a "Climate projections" card appears above the passages. It shows LOCA2 CMIP6 data for the matching jurisdiction (a county claim never gets the city's numbers), with all three scenarios, every measure the wording could mean, and a decade picker that starts at the claim's decade or the 2050s. The backend's rewrite only picks the measures and decade. The numbers are passed through, rounded for display, and the panel works out the change from 1981–2010. An edited search keeps the claim's card. Regional and statewide claims get no card.
+- Source labels run only when the author clicks "How do these sources relate?" (`relateClimateshedEvidence`, `POST /evidence/relate`, `app/evidence_relate.py`). The plugin sends the claim, the searched text, and that search's passages. Each passage comes back labeled Supports, Qualifies, or Contradicts with a quote the server found in that passage, or unlabeled when no quote could be confirmed. Passages that don't address the claim are hidden, with a count. Labels live only on the search result in the panel and are never stored. The climate projections card is never labeled.
 - The panel tidies passage line breaks and PDF symbol glyphs for display only; the words are unchanged.
 - Passages come back verbatim, with no ratings. A source is added only when the author clicks "Add as source", and it is stored with `origin: 'climateshed'`.
 - Manual assessment works without signing in. Only the evidence panel needs an account.
@@ -28,7 +29,7 @@ A paid Google Docs add-on built from the free Evidence Assessment add-on (`../sr
 - Sign-in calls come from Google's shared servers, so the backend's per-IP limit (5 code requests a minute) is shared by every plugin user and needs a different key.
 - Recheck the relevance cutoff (`_MIN_RELEVANCE` in `app/evidence.py`, set to 0.5 from a dev calibration run of 11 claims on 2026-09-15) against real pilot claims and after corpus changes.
 
-## What the AI may and may not do (evidence search built; ratings and flags not yet)
+## What the AI may and may not do (evidence search and source labels built; ratings not yet)
 
 The AI supports the author's decision and never makes it.
 
