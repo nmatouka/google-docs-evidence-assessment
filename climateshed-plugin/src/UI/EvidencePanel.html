@@ -323,6 +323,7 @@
 
   function renderEvidenceResults(result) {
     var body = resetEvidenceBody();
+    renderRatingSuggestions(); // Adds or clears the notes pointing to the labels button.
     var results = result.results || [];
     var data = isEvidenceData(result.data) ? result.data : null;
     var relations = evidenceRelations(result);
@@ -354,6 +355,11 @@
       + (result.claimPlace ? ', local sources first' : ', most relevant first')
       + ' (up to 2 passages per document). Nothing is added to your assessment unless you choose it.'));
 
+    // Above the passages, so it isn't lost below a long list. The rating fields point here too.
+    if (!relations) {
+      body.appendChild(buildEvidenceRelate(result));
+    }
+
     if (relations) {
       var hidden = results.length - visible.length;
       body.appendChild(evidenceEl('p', 'evidence-muted evidence-small',
@@ -366,10 +372,6 @@
     visible.forEach(function(entry) {
       body.appendChild(buildEvidenceResult(entry.item, result.claimPlace, entry.relation));
     });
-
-    if (!relations) {
-      body.appendChild(buildEvidenceRelate(result));
-    }
 
     body.appendChild(evidenceEl('p', 'evidence-muted evidence-small',
       'Passages are quoted from the Climateshed corpus. Check the original document before citing it.'));
@@ -471,6 +473,7 @@
         });
     });
 
+    button.id = 'evidenceRelateBtn'; // The notes in the rating fields scroll to it.
     box.appendChild(button);
     box.appendChild(evidenceEl('p', 'evidence-muted evidence-small',
       'Climateshed\'s AI reads each passage and labels whether it supports, qualifies, or contradicts your claim, '
@@ -629,13 +632,21 @@
     };
   }
 
+  /**
+   * Shows each rating field's suggestion. A field without one gets a note
+   * pointing to the labels button while the search shown for the claim is
+   * unlabeled, since suggestions only come with the labels.
+   */
   function renderRatingSuggestions() {
     var suggestions = currentRatingSuggestions();
-    fillRatingSuggestion('evidenceQualitySuggestion', suggestions && buildQualitySuggestion(suggestions));
-    fillRatingSuggestion('agreementSuggestion', suggestions && buildAgreementSuggestion(suggestions));
+    var quality = suggestions && buildQualitySuggestion(suggestions);
+    var agreement = suggestions && buildAgreementSuggestion(suggestions);
+    var awaiting = awaitingSourceLabels();
+    fillRatingSuggestion('evidenceQualitySuggestion', quality || (awaiting ? buildSourceLabelsHint() : null), !quality);
+    fillRatingSuggestion('agreementSuggestion', agreement || (awaiting ? buildSourceLabelsHint() : null), !agreement);
   }
 
-  function fillRatingSuggestion(id, content) {
+  function fillRatingSuggestion(id, content, isHint) {
     var box = document.getElementById(id);
     if (!box) {
       return;
@@ -646,7 +657,30 @@
     if (content) {
       box.appendChild(content);
     }
+    box.classList.toggle('rating-suggestion-hint', !!(content && isHint));
     box.hidden = !content;
+  }
+
+  /** True when the search shown for the claim has passages that haven't been labeled yet. */
+  function awaitingSourceLabels() {
+    var claim = evidenceState.claim;
+    var result = evidenceState.lastResult;
+    return !!(claim && result && evidenceState.searchedClaim === claim.text
+      && (result.results || []).length > 0 && !evidenceRelations(result));
+  }
+
+  function buildSourceLabelsHint() {
+    var content = evidenceEl('div');
+    content.appendChild(evidenceEl('p', '',
+      'Climateshed can suggest this rating. Click "How do these sources relate?" in the evidence panel above.'));
+    content.appendChild(evidenceButton('link-btn', 'Go to the button', function() {
+      var target = document.getElementById('evidenceRelateBtn') || document.getElementById('evidencePanel');
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (target.focus) {
+        target.focus();
+      }
+    }));
+    return content;
   }
 
   /** "Climateshed suggests: Medium", or "Climateshed suggested Medium on Sep 15, 2026" for a saved suggestion. */
