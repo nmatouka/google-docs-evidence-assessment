@@ -10,6 +10,7 @@ function onOpen(e) {
   DocumentApp.getUi()
     .createMenu(CONFIG.ADDON_NAME)
     .addItem('Assess Selected Text', 'showAssessmentSidebar')
+    .addItem('Suggest Sentences to Check', 'showSuggestionsSidebar')
     .addItem('Manage Assessments', 'showManager')
     .addSeparator()
     .addItem('Generate Appendix', 'generateAppendix')
@@ -63,6 +64,16 @@ function buildSidebar(selectionData, editData) {
  */
 function showAssessmentSidebar() {
   DocumentApp.getUi().showSidebar(buildSidebar(captureSelectionForSidebar(), null));
+}
+
+/**
+ * Opens the Sentences to Check sidebar. Nothing is read or sent until the
+ * document's setting is on and someone starts a scan (see Suggestions.gs).
+ */
+function showSuggestionsSidebar() {
+  var template = HtmlService.createTemplateFromFile('UI/Suggestions');
+  template.kindLabels = toScriptJson(SENTENCE_KIND_LABELS);
+  DocumentApp.getUi().showSidebar(template.evaluate().setTitle('Sentences to Check'));
 }
 
 /**
@@ -172,6 +183,7 @@ function showHelp() {
     + '<h4 style="margin-bottom:4px;">Menu Items</h4>'
     + '<ul style="padding-left:20px;">'
     + '<li><b>Assess Selected Text</b> — Open the assessment sidebar</li>'
+    + '<li><b>Suggest Sentences to Check</b> — Find sentences worth assessing (off until turned on for the document)</li>'
     + '<li><b>Manage Assessments</b> — View, edit, or delete assessments</li>'
     + '<li><b>Generate Appendix</b> — Create/update the evidence appendix</li>'
     + '<li><b>Sync Markers</b> — Renumber markers in document order and restore missing ones</li>'

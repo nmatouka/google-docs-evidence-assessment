@@ -55,6 +55,23 @@ const CONFIG = {
   SUGGESTION_TITLE_CHARS: 150,
   SUGGESTION_MAX_DOCUMENTS: 10,
 
+  // Sentences to check (Suggestions.gs). The opt-in is shared by everyone who
+  // edits the document; results are cached per author. A part must stay within
+  // app/evidence_sentences.py's limits (15,000 characters, 80 paragraphs).
+  SUGGESTIONS_SETTING_KEY: 'sentenceSuggestions',
+  SUGGESTIONS_CACHE_PREFIX: 'sentenceSuggestions_',
+  SUGGESTIONS_PART_CHARS: 12000,
+  SUGGESTIONS_PART_PARAGRAPHS: 60,
+  SUGGESTIONS_PARAGRAPH_CHARS: 5000,
+  SUGGESTIONS_MAX_PER_PART: 40,
+
+  // Results kept in each author's own script cache (readUserCache and writeUserCache
+  // in Utils.gs), so repeating a request doesn't call Climateshed again.
+  CACHE_SECONDS: 21600, // six hours, CacheService's maximum
+  CACHE_MAX_CHARS: 90000, // CacheService allows 100KB per value
+  EVIDENCE_SEARCH_CACHE_PREFIX: 'evidenceSearch_',
+  EVIDENCE_LABELS_CACHE_PREFIX: 'evidenceLabels_',
+
   // Document context sent with a claim so search can tell what it's about.
   // At most this much of the document leaves it with each search.
   CONTEXT_TITLE_CHARS: 150,
@@ -118,6 +135,16 @@ const CONFIDENCE_LEVEL_LABELS = {
   'medium': 'Medium',
   'high': 'High',
   'very-high': 'Very High'
+};
+
+// Kinds of checkable claim that sentence suggestions return (app/evidence_sentences.py).
+const SENTENCE_KIND_LABELS = {
+  statistic: 'Statistic',
+  trend: 'Trend',
+  projection: 'Projection',
+  cause_and_effect: 'Cause and effect',
+  comparison: 'Comparison',
+  study_finding: 'Study finding'
 };
 
 // Structured source fields. Only title is required.

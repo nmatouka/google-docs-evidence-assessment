@@ -1,5 +1,5 @@
 <!--
-  Evidence from Climateshed. Included into Sidebar.html.
+  Evidence from Climateshed. Included into Sidebar.html, after DomHelpers.html.
   Suggestions only: nothing reaches the assessment unless the author clicks
   "Add as source". All text from the server is inserted with textContent.
 -->
@@ -211,28 +211,6 @@
       })
       .withFailureHandler(function(err) { fail(err.message); });
     runner[functionName].apply(runner, args);
-  }
-
-  function evidenceEl(tag, className, text) {
-    var node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text) node.textContent = text;
-    return node;
-  }
-
-  function evidenceButton(className, label, onClick) {
-    var button = evidenceEl('button', className, label);
-    button.type = 'button';
-    button.addEventListener('click', function() { onClick(); });
-    return button;
-  }
-
-  function evidenceLink(label, url) {
-    var link = evidenceEl('a', '', label);
-    link.href = url;
-    link.target = '_blank';
-    link.rel = 'noopener';
-    return link;
   }
 
   function resetEvidenceBody() {
@@ -745,6 +723,9 @@
     box.appendChild(evidenceEl('div', 'evidence-query-text', result.searchQuery || ''));
     if (result.claimPlace) {
       box.appendChild(evidenceEl('div', 'evidence-query-place', 'Place: ' + result.claimPlace));
+    }
+    if (result.reused) {
+      box.appendChild(evidenceEl('div', 'evidence-query-place', 'Same search as in the last six hours, so it wasn\'t run again.'));
     }
     box.appendChild(evidenceButton('link-btn', 'Edit search', function() {
       renderEvidenceQueryEditor(result.searchQuery || (evidenceState.claim ? evidenceState.claim.text : ''));

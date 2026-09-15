@@ -1,0 +1,28 @@
+<!--
+  DOM helpers shared by the sidebars: Sidebar.html (for EvidencePanel.html) and
+  Suggestions.html. Include before the scripts that use them. Text is always set
+  with textContent, never parsed as HTML.
+-->
+<script>
+  function evidenceEl(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text) node.textContent = text;
+    return node;
+  }
+
+  function evidenceButton(className, label, onClick) {
+    var button = evidenceEl('button', className, label);
+    button.type = 'button';
+    button.addEventListener('click', function() { onClick(); });
+    return button;
+  }
+
+  function evidenceLink(label, url) {
+    var link = evidenceEl('a', '', label);
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    return link;
+  }
+</script>

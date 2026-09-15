@@ -342,6 +342,16 @@ function searchClimateshedEvidence(request) {
       }
     }
 
+    // The same request in this document within six hours (same claim and context,
+    // or the same edited search) reuses the earlier result instead of searching and
+    // rewriting the claim again, so reopening a claim costs nothing.
+    var cacheKey = CONFIG.EVIDENCE_SEARCH_CACHE_PREFIX + digestOf([DocumentApp.getActiveDocument().getId(), payload]);
+    var cached = readUserCache(cacheKey);
+    if (cached && cached.success) {
+      cached.reused = true;
+      return cached;
+    }
+
     var response = callClimateshedApi('post', '/evidence/search', payload, token);
     var failure = evidenceApiFailure(response,
       'Too many searches in a short time. Wait a minute and try again.',
@@ -350,7 +360,7 @@ function searchClimateshedEvidence(request) {
       return failure;
     }
 
-    return {
+    var result = {
       success: true,
       results: Array.isArray(response.body.results) ? response.body.results : [],
       documentCount: response.body.document_count || 0,
@@ -359,6 +369,8 @@ function searchClimateshedEvidence(request) {
       claimPlace: response.body.claim_place || null,
       data: response.body.data || null
     };
+    writeUserCache(cacheKey, result);
+    return result;
   });
 }
 
@@ -414,6 +426,13 @@ function relateClimateshedEvidence(request) {
       payload.search_query = searchQuery;
     }
 
+    // Labels for the same claim and passages within six hours are reused, not requested again.
+    var cacheKey = CONFIG.EVIDENCE_LABELS_CACHE_PREFIX + digestOf([DocumentApp.getActiveDocument().getId(), payload]);
+    var cached = readUserCache(cacheKey);
+    if (cached && Array.isArray(cached.relations) && cached.relations.length === passages.length) {
+      return { success: true, relations: cached.relations, evidenceQuality: cached.evidenceQuality || null, reused: true };
+    }
+
     var response = callClimateshedApi('post', '/evidence/relate', payload, token);
     var failure = evidenceApiFailure(response,
       'Too many requests in a short time. Wait a minute and try again.',
@@ -426,8 +445,10 @@ function relateClimateshedEvidence(request) {
     if (!Array.isArray(relations) || relations.length !== passages.length) {
       return { success: false, error: 'Climateshed sent labels that don\'t match the passages. Try again.' };
     }
-    // { level, reason, based_on } or null. The panel shows it beside the Evidence Quality field.
-    return { success: true, relations: relations, evidenceQuality: response.body.evidence_quality || null };
+    // evidenceQuality is { level, reason, based_on } or null. The panel shows it beside the Evidence Quality field.
+    var result = { success: true, relations: relations, evidenceQuality: response.body.evidence_quality || null };
+    writeUserCache(cacheKey, result);
+    return result;
   });
 }
 

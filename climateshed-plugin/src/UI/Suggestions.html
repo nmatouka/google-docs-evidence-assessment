@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <?!= include('Styles') ?>
+</head>
+<body>
+  <h3>Sentences to Check</h3>
+  <div id="suggestionsBody" class="evidence-body"></div>
+
+  <?!= include('DomHelpers') ?>
+  <script>
+    // Suggestions only: nothing in the document changes. All text from the
+    // server is inserted with textContent.
+
+    // Kinds of claim, from SENTENCE_KIND_LABELS in Config.gs.
+    var KIND_LABELS = <?!= kindLabels ?>;
+
+    var currentSetting = null; // { enabled, changedBy, changedAt }
+    var scan = null;           // { title, parts, next, found, reused, stopped, running, error }
+
+    function resetBody() {
+      var body = document.getElementById('suggestionsBody');
+      while (body.firstChild) {
+        body.removeChild(body.firstChild);
+      }
+      return body;
+    }
+
+    function renderMessage(text, loading) {
+      resetBody().appendChild(evidenceEl('p', loading ? 'evidence-muted evidence-loading' : 'evidence-muted', text));
+    }
+
+    function renderError(message, retry) {
+      var body = resetBody();
+      body.appendChild(evidenceEl('p', 'evidence-error', message || 'Something went wrong reaching Climateshed.'));
+      if (retry) {
+        body.appendChild(evidenceButton('btn btn-secondary btn-small', 'Try again', retry));
+      }
+    }
+
+    function formatDate(iso) {
+      var date = iso ? new Date(iso) : null;
+      return date && !isNaN(date.getTime())
+        ? date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+        : '';
+    }
+
+    /** Checks the Climateshed account, then shows this document's setting. */
+    function start() {
+      renderMessage('Checking your Climateshed account...', true);
+      google.script.run
+        .withSuccessHandler(function(account) {
+          if (account && account.success && account.signedIn && account.access && account.access.allowed) {
+            loadSetting();
+          } else if (account && account.success && !account.signedIn) {
+            renderSignInNeeded();
+          } else if (account && account.success) {
+            renderNoAccess(account.access);
+          } else {
+            renderFailure(account, start);
+          }
+        })
+        .withFailureHandler(function(err) { renderError(err.message, start); })
+        .getClimateshedAccount();
+    }
+
+    /** Shows the state for a failed call: permission, sign-in, access, setting off, or an error. */
+    function renderFailure(result, retry) {
+      if (result && result.permissionRequired) {
+        var body = resetBody();
+        body.appendChild(evidenceEl('p', 'evidence-muted',
+          (result.error || 'The plugin needs your permission to connect to Climateshed.')
+          + ' Google asks for this separately from signing in to Climateshed.'));
+        if (result.authorizationUrl && /^https:\/\//i.test(result.authorizationUrl)) {
+          body.appendChild(evidenceLink('Allow the connection', result.authorizationUrl));
+        }
+        body.appendChild(evidenceButton('btn btn-secondary btn-small', 'Try again', start));
+      } else if (result && result.signedOut) {
+        renderSignInNeeded();
+      } else if (result && result.accessDenied) {
+        renderNoAccess({ message: result.error, accountUrl: result.accountUrl });
+      } else if (result && result.notEnabled) {
+        scan = null;
+        loadSetting();
+      } else {
+        renderError(result && result.error, retry);
+      }
+    }
+
+    function renderSignInNeeded() {
+      var body = resetBody();
+      body.appendChild(evidenceEl('p', 'evidence-muted',
+        'Sign in to Climateshed to find sentences to check. Sign in from Assess Selected Text, then open this again.'));
+      body.appendChild(evidenceButton('btn btn-secondary btn-small', 'Open Assess Selected Text', function() {
+        google.script.run.showAssessmentSidebar();
+      }));
+    }
+
+    function renderNoAccess(access) {
+      var body = resetBody();
+      body.appendChild(evidenceEl('p', 'evidence-muted',
+        (access && access.message) || 'Your Climateshed account can\'t use evidence features yet.'));
+      if (access && access.accountUrl) {
+        body.appendChild(evidenceLink('Open your Climateshed account', access.accountUrl));
+      }
+    }
+
+    function loadSetting() {
+      renderMessage('Loading this document\'s setting...', true);
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success) {
+            renderSetting(result.setting);
+          } else {
+            renderFailure(result, loadSetting);
+          }
+        })
+        .withFailureHandler(function(err) { renderError(err.message, loadSetting); })
+        .getSentenceSuggestionsSetting();
+    }
+
+    function changeSetting(enabled, button) {
+      button.disabled = true;
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success) {
+            scan = null;
+            renderSetting(result.setting);
+          } else {
+            renderFailure(result, loadSetting);
+          }
+        })
+        .withFailureHandler(function(err) { renderError(err.message, loadSetting); })
+        .setSentenceSuggestionsEnabled(enabled);
+    }
+
+    function renderSetting(setting) {
+      currentSetting = setting;
+      if (setting.enabled) {
+        renderScanner();
+      } else {
+        renderOptIn(setting);
+      }
+    }
+
+    function renderOptIn(setting) {
+      var body = resetBody();
+      body.appendChild(evidenceEl('p', '',
+        'Climateshed can read this document and suggest sentences that make claims worth checking against evidence.'));
+      body.appendChild(evidenceEl('p', 'evidence-muted evidence-small',
+        'When someone scans, the document\'s text is sent to Climateshed a part at a time, without the evidence '
+        + 'appendix. Climateshed uses it only to find sentences and doesn\'t save it. Nothing in the document changes.'));
+      body.appendChild(evidenceEl('p', 'evidence-muted evidence-small',
+        'This setting is shared with everyone who edits the document. Turning it on doesn\'t read anything: '
+        + 'a scan runs only when someone clicks Find sentences to check.'));
+      if (setting.changedBy && setting.changedAt) {
+        body.appendChild(evidenceEl('p', 'evidence-muted evidence-small',
+          'Turned off by ' + setting.changedBy + ' on ' + formatDate(setting.changedAt) + '.'));
+      }
+      var turnOn = evidenceButton('btn btn-primary btn-small', 'Turn on for this document', function() {
+        changeSetting(true, turnOn);
+      });
+      body.appendChild(turnOn);
+    }
+
+    function renderScanner() {
+      var body = resetBody();
+      var status = evidenceEl('div', 'suggestions-setting', 'On for this document'
+        + (currentSetting.changedBy ? ', turned on by ' + currentSetting.changedBy : '')
+        + (currentSetting.changedAt ? ' on ' + formatDate(currentSetting.changedAt) : '') + '. ');
+      var turnOff = evidenceButton('link-btn', 'Turn off', function() { changeSetting(false, turnOff); });
+      status.appendChild(turnOff);
+      body.appendChild(status);
+
+      if (!scan) {
+        body.appendChild(evidenceButton('btn btn-primary btn-small', 'Find sentences to check', runScan));
+        body.appendChild(evidenceEl('p', 'evidence-muted evidence-small',
+          'Sentences you\'ve already assessed are left out. Parts of the document that haven\'t changed since your '
+          + 'last scan in the past six hours aren\'t sent again.'));
+        return;
+      }
+      if (!scan.running) {
+        body.appendChild(evidenceButton('btn btn-secondary btn-small', 'Scan again', runScan));
+      }
+      body.appendChild(buildScanStatus());
+      body.appendChild(buildResults());
+    }
+
+    function runScan() {
+      scan = { title: '', parts: [], next: 0, found: [], reused: 0, stopped: false, running: true, error: null };
+      var current = scan;
+      renderScanner();
+      google.script.run
+        .withSuccessHandler(function(plan) {
+          if (current !== scan) {
+            return;
+          }
+          if (!plan || !plan.success) {
+            scan = null;
+            renderFailure(plan, runScan);
+            return;
+          }
+          scan.title = plan.title;
+          scan.parts = plan.parts || [];
+          scan.reused = scan.parts.filter(function(part) { return part.suggestions; }).length;
+          continueScan();
+        })
+        .withFailureHandler(function(err) {
+          if (current === scan) {
+            scan = null;
+            renderError(err.message, runScan);
+          }
+        })
+        .planSentenceSuggestions();
+    }
+
+    /** Collects results part by part, asking Climateshed only about parts without them. */
+    function continueScan() {
+      scan.running = true;
+      scan.error = null;
+      while (scan.next < scan.parts.length && scan.parts[scan.next].suggestions) {
+        scan.found = scan.found.concat(scan.parts[scan.next].suggestions);
+        scan.next++;
+      }
+      if (scan.stopped || scan.next >= scan.parts.length) {
+        scan.running = false;
+        renderScanner();
+        return;
+      }
+      renderScanner();
+
+      var current = scan;
+      var part = scan.parts[scan.next];
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (current !== scan) {
+            return; // A new scan started, or the setting changed.
+          }
+          if (result && result.success) {
+            part.suggestions = result.suggestions || [];
+            continueScan();
+          } else if (result && (result.permissionRequired || result.signedOut || result.accessDenied || result.notEnabled)) {
+            scan = null;
+            renderFailure(result, null);
+          } else {
+            scan.running = false;
+            scan.error = (result && result.error) || 'Something went wrong reaching Climateshed.';
+            renderScanner();
+          }
+        })
+        .withFailureHandler(function(err) {
+          if (current === scan) {
+            scan.running = false;
+            scan.error = err.message;
+            renderScanner();
+          }
+        })
+        .findSentencesInPart(scan.title, { heading: part.heading, paragraphs: part.paragraphs });
+    }
+
+    function buildScanStatus() {
+      var box = evidenceEl('div', 'suggestions-status');
+      var total = scan.parts.length;
+
+      if (scan.running) {
+        var progress = evidenceEl('p', 'evidence-muted evidence-loading', total
+          ? 'Reading part ' + (scan.next + 1) + ' of ' + total + '...'
+          : 'Reading the document...');
+        box.appendChild(progress);
+        if (total) {
+          var stop = evidenceButton('link-btn', 'Stop', function() {
+            scan.stopped = true;
+            progress.textContent = 'Stopping after this part...';
+            stop.disabled = true;
+          });
+          box.appendChild(stop);
+        }
+        return box;
+      }
+
+      if (scan.error) {
+        box.appendChild(evidenceEl('p', 'evidence-error', scan.error));
+        box.appendChild(evidenceButton('btn btn-secondary btn-small', 'Try again', continueScan));
+      }
+
+      var count = scan.found.length;
+      var summary;
+      if (total === 0) {
+        summary = 'There\'s no text to read before the evidence appendix.';
+      } else if (scan.next < total) {
+        summary = count + ' sentence' + (count === 1 ? '' : 's') + ' to check so far (' + scan.next + ' of '
+          + total + ' parts read).';
+      } else {
+        summary = count + ' sentence' + (count === 1 ? '' : 's') + ' to check in ' + total + ' part'
+          + (total === 1 ? '' : 's') + ' of the document.';
+      }
+      if (scan.reused) {
+        summary += ' ' + scan.reused + ' unchanged part' + (scan.reused === 1 ? ' was' : 's were')
+          + ' reused from your last scan and not sent again.';
+      }
+      box.appendChild(evidenceEl('p', 'evidence-muted', summary));
+      if (total && count === 0 && scan.next >= total) {
+        box.appendChild(evidenceEl('p', 'evidence-muted evidence-small',
+          'No sentences stood out as claims to check. Sentences you\'ve already assessed are left out.'));
+      } else if (count) {
+        box.appendChild(evidenceEl('p', 'evidence-muted evidence-small',
+          'These are suggestions. Click Assess to open a sentence in Assess Selected Text; nothing is added until you save.'));
+      }
+      return box;
+    }
+
+    function buildResults() {
+      var list = evidenceEl('div', 'suggestion-list');
+      var heading = null;
+      scan.found.forEach(function(item) {
+        if (item.heading && item.heading !== heading) {
+          list.appendChild(evidenceEl('div', 'suggestion-heading', item.heading));
+        }
+        heading = item.heading;
+        list.appendChild(buildSuggestion(item));
+      });
+      return list;
+    }
+
+    function buildSuggestion(item) {
+      var card = evidenceEl('div', 'suggestion-item');
+      card.appendChild(evidenceEl('div', 'suggestion-kind', KIND_LABELS[item.kind] || 'Claim'));
+      card.appendChild(evidenceEl('div', 'suggestion-sentence', item.sentence));
+
+      var error = evidenceEl('p', 'evidence-error');
+      var actions = evidenceEl('div', 'evidence-actions');
+      var show = evidenceButton('link-btn', 'Show in document', function() {
+        runOnSentence('selectSuggestedSentence', item, show, error);
+      });
+      var assess = evidenceButton('btn btn-secondary evidence-add-btn', 'Assess', function() {
+        runOnSentence('assessSuggestedSentence', item, assess, error);
+      });
+      actions.appendChild(show);
+      actions.appendChild(assess);
+      card.appendChild(actions);
+      card.appendChild(error);
+      return card;
+    }
+
+    /** Selects the sentence, or opens it for assessment; errors show on its card. */
+    function runOnSentence(functionName, item, button, error) {
+      error.textContent = '';
+      button.disabled = true;
+      var runner = google.script.run
+        .withSuccessHandler(function(result) {
+          button.disabled = false;
+          if (!result || !result.success) {
+            error.textContent = (result && result.error) || 'Something went wrong.';
+          }
+        })
+        .withFailureHandler(function(err) {
+          button.disabled = false;
+          error.textContent = err.message;
+        });
+      runner[functionName]({ index: item.index, sentence: item.sentence });
+    }
+
+    start();
+  </script>
+</body>
+</html>

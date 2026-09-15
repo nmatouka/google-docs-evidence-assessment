@@ -85,12 +85,21 @@ function capturePendingClaim() {
     return null;
   }
 
-  var range = builder.build();
+  return anchorPendingClaim(doc, builder.build());
+}
+
+/**
+ * Anchors a range as a pending claim. Used for the selection and for a
+ * suggested sentence opened from Sentences to Check.
+ * @param {Document} doc
+ * @param {Range} range
+ * @returns {Object|null} { pendingRangeName, text }, or null if the range has no text.
+ */
+function anchorPendingClaim(doc, range) {
   var text = getRangeText(range);
   if (!text) {
     return null;
   }
-
   var pendingRangeName = CONFIG.PENDING_RANGE_PREFIX + generateId() + '_' + Date.now();
   doc.addNamedRange(pendingRangeName, range);
   return { pendingRangeName: pendingRangeName, text: text };
