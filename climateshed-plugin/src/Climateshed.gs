@@ -368,7 +368,7 @@ function searchClimateshedEvidence(request) {
  * words each label rests on. Runs only when the author asks. Sends the claim,
  * the searched text, and the passages that search returned; nothing else from
  * the document.
- * @param {Object} request - { claimText, searchQuery?, passages: string[] }
+ * @param {Object} request - { claimText, searchQuery?, passages: string[], sources?: { title, place, place_match }[] }
  * @returns {Object} { success, relations } with one { relation, quote } per passage, in order, or
  *   { success: false, error, signedOut?, accessDenied?, permissionRequired?, accountUrl? }
  */
@@ -398,6 +398,17 @@ function relateClimateshedEvidence(request) {
     }
 
     var payload = { claim: claim, passages: passages };
+    // Where each passage came from, so a different place's plan isn't counted as evidence for the claim.
+    if (Array.isArray(request.sources) && request.sources.length === passages.length) {
+      payload.passage_sources = request.sources.map(function(source) {
+        source = source || {};
+        return {
+          title: cleanString(source.title).substring(0, 300),
+          place: cleanString(source.place).substring(0, 100) || null,
+          place_match: ['same', 'related', 'other'].indexOf(source.place_match) !== -1 ? source.place_match : null
+        };
+      });
+    }
     var searchQuery = cleanString(request.searchQuery).replace(/\s+/g, ' ').substring(0, 2000);
     if (searchQuery) {
       payload.search_query = searchQuery;
@@ -415,7 +426,8 @@ function relateClimateshedEvidence(request) {
     if (!Array.isArray(relations) || relations.length !== passages.length) {
       return { success: false, error: 'Climateshed sent labels that don\'t match the passages. Try again.' };
     }
-    return { success: true, relations: relations };
+    // { level, reason, based_on } or null. The panel shows it beside the Evidence Quality field.
+    return { success: true, relations: relations, evidenceQuality: response.body.evidence_quality || null };
   });
 }
 

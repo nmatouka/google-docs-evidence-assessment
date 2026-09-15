@@ -116,13 +116,65 @@ function validateAssessment(formData, isNew) {
 }
 
 /**
+ * Keeps the known fields of Climateshed's evidence quality suggestion.
+ * @param {*} raw - From the sidebar.
+ * @returns {Object|null} { level, reason, basedOn: string[], suggestedAt }, or null if unusable.
+ */
+function normalizeEvidenceSuggestion(raw) {
+  if (!raw || typeof raw !== 'object' || !isEnumValue(EVIDENCE_QUALITY, raw.level)) {
+    return null;
+  }
+  var reason = cleanString(raw.reason).substring(0, CONFIG.SUGGESTION_REASON_CHARS);
+  var basedOn = (Array.isArray(raw.basedOn) ? raw.basedOn : [])
+    .map(function(title) { return cleanString(title).substring(0, CONFIG.SUGGESTION_TITLE_CHARS); })
+    .filter(function(title) { return title; })
+    .slice(0, CONFIG.SUGGESTION_MAX_DOCUMENTS);
+  if (!reason || basedOn.length === 0) {
+    return null;
+  }
+  return { level: raw.level, reason: reason, basedOn: basedOn, suggestedAt: suggestionTimestamp(raw.suggestedAt) };
+}
+
+/**
+ * Keeps the known fields of the agreement suggestion, which the sidebar works
+ * out from Climateshed's source labels.
+ * @param {*} raw - From the sidebar.
+ * @returns {Object|null} { level, counts: { supports, qualifies, contradicts }, suggestedAt }, or null if unusable.
+ */
+function normalizeAgreementSuggestion(raw) {
+  if (!raw || typeof raw !== 'object' || !isEnumValue(AGREEMENT_LEVEL, raw.level)
+    || !raw.counts || typeof raw.counts !== 'object') {
+    return null;
+  }
+  var counts = {};
+  ['supports', 'qualifies', 'contradicts'].forEach(function(key) {
+    var count = raw.counts[key];
+    var isCount = typeof count === 'number' && Math.floor(count) === count
+      && count >= 0 && count <= CONFIG.EVIDENCE_RELATE_MAX_PASSAGES;
+    counts[key] = isCount ? count : 0;
+  });
+  return { level: raw.level, counts: counts, suggestedAt: suggestionTimestamp(raw.suggestedAt) };
+}
+
+/**
+ * @param {*} value - When the sidebar showed a suggestion.
+ * @returns {string} The value if it's an ISO-8601 UTC time, otherwise now.
+ */
+function suggestionTimestamp(value) {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(value) ? value : nowISO();
+}
+
+/**
  * Builds the evidence, agreement and confidence fields from validated form data.
+ * Climateshed's suggestions are stored beside the author's ratings, never in
+ * place of them. When there's no usable suggestion the field is left out, so an
+ * update keeps any suggestion already stored (updateAssessment merges one level deep).
  * @param {Object} formData
  * @param {Object[]} sources - Normalized sources.
  * @returns {Object} { evidence, agreement, confidence }
  */
 function buildRatingFields(formData, sources) {
-  return {
+  var fields = {
     evidence: {
       quality: formData.evidence.quality,
       sources: sources,
@@ -137,6 +189,16 @@ function buildRatingFields(formData, sources) {
       conditional: cleanString(formData.confidence.conditional)
     }
   };
+
+  var evidenceSuggestion = normalizeEvidenceSuggestion(formData.evidence.suggestion);
+  if (evidenceSuggestion) {
+    fields.evidence.suggestion = evidenceSuggestion;
+  }
+  var agreementSuggestion = normalizeAgreementSuggestion(formData.agreement.suggestion);
+  if (agreementSuggestion) {
+    fields.agreement.suggestion = agreementSuggestion;
+  }
+  return fields;
 }
 
 /**

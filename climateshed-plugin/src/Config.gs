@@ -49,6 +49,12 @@ const CONFIG = {
   EVIDENCE_RELATE_MAX_PASSAGES: 10,
   EVIDENCE_RELATE_PASSAGE_CHARS: 12000,
 
+  // Climateshed rating suggestions saved beside the author's ratings. Capped so
+  // they can't push an assessment toward MAX_VALUE_BYTES on their own.
+  SUGGESTION_REASON_CHARS: 500,
+  SUGGESTION_TITLE_CHARS: 150,
+  SUGGESTION_MAX_DOCUMENTS: 10,
+
   // Document context sent with a claim so search can tell what it's about.
   // At most this much of the document leaves it with each search.
   CONTEXT_TITLE_CHARS: 150,

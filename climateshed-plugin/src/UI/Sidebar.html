@@ -37,6 +37,7 @@
       <label><input type="radio" name="evidenceQuality" value="robust"> Robust</label>
     </div>
     <div id="evidenceQualityError" class="error">Please select an evidence quality level.</div>
+    <div id="evidenceQualitySuggestion" class="rating-suggestion" hidden></div>
   </div>
 
   <!-- Sources -->
@@ -63,6 +64,7 @@
       <label><input type="radio" name="agreementLevel" value="high"> High</label>
     </div>
     <div id="agreementLevelError" class="error">Please select an agreement level.</div>
+    <div id="agreementSuggestion" class="rating-suggestion" hidden></div>
   </div>
 
   <!-- Agreement Notes -->
@@ -124,6 +126,7 @@
       if (isEditMode) {
         populateEditForm();
         startEvidencePanel({ text: editData.claimText, assessmentId: editData.id });
+        loadStoredRatingSuggestions(editData);
       } else if (selectionData && selectionData.text) {
         document.getElementById('claimDisplay').textContent = selectionData.text;
         addSourceCard(null);
@@ -374,16 +377,20 @@
 
       if (!valid) return;
 
+      // Climateshed's suggestions, if any, are saved beside the author's ratings.
+      var suggestions = getRatingSuggestionsForSave();
       var formData = {
         pendingRangeName: isEditMode ? null : selectionData.pendingRangeName,
         evidence: {
           quality: evidenceQuality,
           sources: sourceResult.sources,
-          notes: document.getElementById('evidenceNotes').value.trim()
+          notes: document.getElementById('evidenceNotes').value.trim(),
+          suggestion: suggestions.evidence
         },
         agreement: {
           level: agreementLevel,
-          notes: document.getElementById('agreementNotes').value.trim()
+          notes: document.getElementById('agreementNotes').value.trim(),
+          suggestion: suggestions.agreement
         },
         confidence: {
           level: confidenceLevel,

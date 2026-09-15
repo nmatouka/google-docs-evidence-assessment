@@ -18,7 +18,8 @@
     account: null,        // last successful result of getClimateshedAccount()
     pendingEmail: '',     // email a sign-in code was sent to
     searchedClaim: null,  // text of the claim whose results are displayed
-    lastResult: null      // last successful search result (with .relations once labeled), to return to after editing the search
+    lastResult: null,     // last successful search result (with .relations once labeled), to return to after editing the search
+    suggestions: null     // rating suggestions for a claim, shown beside the rating fields (see recordRatingSuggestions)
   };
 
   var EVIDENCE_DOC_TYPE_LABELS = {
@@ -51,6 +52,9 @@
     contradicts: 'Contradicts the claim'
   };
 
+  var EVIDENCE_QUALITY_SUGGESTION_LABELS = { limited: 'Limited', medium: 'Medium', robust: 'Robust' };
+  var AGREEMENT_SUGGESTION_LABELS = { low: 'Low', medium: 'Medium', high: 'High' };
+
   var EVIDENCE_EXCERPT_CHARS = 280;
 
   /**
@@ -61,6 +65,7 @@
   function startEvidencePanel(claim) {
     evidenceState.claim = claim && claim.text ? claim : null;
     document.getElementById('evidenceSignOutBtn').onclick = signOutOfEvidence;
+    renderRatingSuggestions();
 
     if (evidenceState.account) {
       onEvidenceAccount(evidenceState.account);
@@ -375,6 +380,7 @@
       var hidden = results.length - visible.length;
       body.appendChild(evidenceEl('p', 'evidence-muted evidence-small',
         'Labels are from Climateshed\'s AI, reading only each passage\'s text. Check the passage before relying on one.'
+        + (hasRatingSuggestions() ? ' Suggested ratings appear beside Evidence Quality and Agreement Level below.' : '')
         + (hidden === 1 ? ' 1 passage that doesn\'t address the claim is hidden.' : '')
         + (hidden > 1 ? ' ' + hidden + ' passages that don\'t address the claim are hidden.' : '')));
     }
@@ -460,6 +466,8 @@
           }
           if (response && response.success) {
             result.relations = response.relations;
+            result.evidenceQuality = response.evidenceQuality || null;
+            recordRatingSuggestions(result);
             // If the author moved on (for example, to edit the search), the labels show when they come back.
             if (document.body.contains(box)) {
               renderEvidenceResults(result);
@@ -478,16 +486,252 @@
         .relateClimateshedEvidence({
           claimText: claim.text,
           searchQuery: result.searchQuery || null,
-          passages: (result.results || []).map(function(item) { return item.passage || ''; })
+          passages: (result.results || []).map(function(item) { return item.passage || ''; }),
+          sources: (result.results || []).map(function(item) {
+            return { title: item.title || '', place: item.place || null, place_match: item.place_match || null };
+          })
         });
     });
 
     box.appendChild(button);
     box.appendChild(evidenceEl('p', 'evidence-muted evidence-small',
       'Climateshed\'s AI reads each passage and labels whether it supports, qualifies, or contradicts your claim, '
-      + 'quoting the words it relied on. Passages that don\'t address the claim are hidden. This can take up to a minute.'));
+      + 'quoting the words it relied on. Passages that don\'t address the claim are hidden. Suggested Evidence Quality '
+      + 'and Agreement Level ratings appear beside those fields below. This can take up to a minute.'));
     box.appendChild(error);
     return box;
+  }
+
+  /**
+   * Suggests an agreement level by rule from the source labels. Documents are
+   * counted rather than passages, so one long report can't count twice. A
+   * document supports the claim if a passage supports it and none contradict
+   * it, contradicts it if a passage contradicts it and none support it, and
+   * otherwise qualifies it.
+   * @param {Object[]} results - Search results.
+   * @param {Object[]} relations - One { relation, quote } per result.
+   * @returns {Object} { level, counts: { supports, qualifies, contradicts }, documents }. level is
+   *   'low', 'medium', or 'high', or null when fewer than two documents address the claim.
+   */
+  function suggestAgreement(results, relations) {
+    var documents = {};
+    results.forEach(function(item, index) {
+      var relation = relations[index] && relations[index].relation;
+      if (!EVIDENCE_RELATION_LABELS[relation]) {
+        return; // Unlabeled, or doesn't address the claim.
+      }
+      var key = JSON.stringify([item.title, item.url || null]);
+      documents[key] = documents[key] || {};
+      documents[key][relation] = true;
+    });
+
+    var counts = { supports: 0, qualifies: 0, contradicts: 0 };
+    Object.keys(documents).forEach(function(key) {
+      var found = documents[key];
+      if (found.supports && !found.contradicts) {
+        counts.supports++;
+      } else if (found.contradicts && !found.supports) {
+        counts.contradicts++;
+      } else {
+        counts.qualifies++;
+      }
+    });
+
+    var total = counts.supports + counts.qualifies + counts.contradicts;
+    var level = null;
+    if (total >= 2) {
+      if (counts.contradicts > 0 && counts.contradicts >= counts.supports) {
+        level = 'low';
+      } else if (counts.contradicts === 0 && counts.supports >= 2 && counts.supports >= counts.qualifies) {
+        level = 'high';
+      } else {
+        level = 'medium';
+      }
+    }
+    return { level: level, counts: counts, documents: total };
+  }
+
+  /** e.g. "Of the 3 documents that address the claim, 2 support it, 1 qualifies it, and none contradict it." */
+  function describeAgreementCounts(counts) {
+    var part = function(count, one, many) {
+      return (count === 0 ? 'none ' : count + ' ') + (count === 1 ? one : many);
+    };
+    var total = counts.supports + counts.qualifies + counts.contradicts;
+    return 'Of the ' + total + ' documents that address the claim, '
+      + part(counts.supports, 'supports it', 'support it') + ', '
+      + part(counts.qualifies, 'qualifies it', 'qualify it') + ', and '
+      + part(counts.contradicts, 'contradicts it', 'contradict it') + '.';
+  }
+
+  /** The titles of the passages an evidence quality suggestion rests on, once each. */
+  function qualitySuggestionSources(results, basedOn) {
+    var titles = [];
+    (Array.isArray(basedOn) ? basedOn : []).forEach(function(number) {
+      var item = results[number - 1];
+      // Local plan titles already name their year, e.g. "City of Fresno plan (2021)".
+      var addYear = item && item.year && String(item.title).indexOf(String(item.year)) === -1;
+      var title = item && item.title ? item.title + (addYear ? ' (' + item.year + ')' : '') : '';
+      if (title && titles.indexOf(title) === -1) {
+        titles.push(title);
+      }
+    });
+    return titles;
+  }
+
+  /**
+   * Keeps the rating suggestions from a labeling request for the current claim
+   * and shows them beside the rating fields. Evidence quality comes from
+   * Climateshed; agreement is worked out here from the labels. They replace
+   * any earlier suggestions shown for the claim.
+   */
+  function recordRatingSuggestions(result) {
+    var claim = evidenceState.claim;
+    var relations = evidenceRelations(result);
+    if (!claim || !relations) {
+      return;
+    }
+    var results = result.results || [];
+    var suggestedAt = new Date().toISOString();
+    var agreement = suggestAgreement(results, relations);
+    var quality = result.evidenceQuality;
+    var basedOn = quality && EVIDENCE_QUALITY_SUGGESTION_LABELS[quality.level] && quality.reason
+      ? qualitySuggestionSources(results, quality.based_on)
+      : [];
+
+    evidenceState.suggestions = {
+      claimText: claim.text,
+      evidence: basedOn.length
+        ? { level: quality.level, reason: quality.reason, basedOn: basedOn, suggestedAt: suggestedAt }
+        : null,
+      agreement: agreement.level
+        ? { level: agreement.level, counts: agreement.counts, suggestedAt: suggestedAt }
+        : null,
+      documents: agreement.documents, // documents the labels found addressing the claim
+      stored: false
+    };
+    renderRatingSuggestions();
+  }
+
+  /**
+   * Shows the suggestions saved with the assessment being edited, so saving
+   * again keeps them. Called by the sidebar after the panel starts in edit mode.
+   * @param {Object} assessment
+   */
+  function loadStoredRatingSuggestions(assessment) {
+    evidenceState.suggestions = {
+      claimText: assessment.claimText,
+      evidence: (assessment.evidence && assessment.evidence.suggestion) || null,
+      agreement: (assessment.agreement && assessment.agreement.suggestion) || null,
+      documents: null,
+      stored: true
+    };
+    renderRatingSuggestions();
+  }
+
+  /** The suggestions that belong to the claim in the sidebar, or null. */
+  function currentRatingSuggestions() {
+    var suggestions = evidenceState.suggestions;
+    return suggestions && evidenceState.claim && suggestions.claimText === evidenceState.claim.text ? suggestions : null;
+  }
+
+  function hasRatingSuggestions() {
+    var suggestions = currentRatingSuggestions();
+    return !!(suggestions && (suggestions.evidence || suggestions.agreement));
+  }
+
+  /**
+   * Suggestions to save beside the author's own ratings. Called by the sidebar when saving.
+   * @returns {Object} { evidence, agreement }, each a suggestion or null.
+   */
+  function getRatingSuggestionsForSave() {
+    var suggestions = currentRatingSuggestions();
+    return {
+      evidence: suggestions ? suggestions.evidence : null,
+      agreement: suggestions ? suggestions.agreement : null
+    };
+  }
+
+  function renderRatingSuggestions() {
+    var suggestions = currentRatingSuggestions();
+    fillRatingSuggestion('evidenceQualitySuggestion', suggestions && buildQualitySuggestion(suggestions));
+    fillRatingSuggestion('agreementSuggestion', suggestions && buildAgreementSuggestion(suggestions));
+  }
+
+  function fillRatingSuggestion(id, content) {
+    var box = document.getElementById(id);
+    if (!box) {
+      return;
+    }
+    while (box.firstChild) {
+      box.removeChild(box.firstChild);
+    }
+    if (content) {
+      box.appendChild(content);
+    }
+    box.hidden = !content;
+  }
+
+  /** "Climateshed suggests: Medium", or "Climateshed suggested Medium on Sep 15, 2026" for a saved suggestion. */
+  function ratingSuggestionHeading(suggestion, labels, stored) {
+    var date = stored && suggestion.suggestedAt ? new Date(suggestion.suggestedAt) : null;
+    var text = date && !isNaN(date.getTime())
+      ? 'Climateshed suggested ' + labels[suggestion.level] + ' on '
+        + date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+      : 'Climateshed suggests: ' + labels[suggestion.level];
+    return evidenceEl('div', 'rating-suggestion-head', text);
+  }
+
+  /** Selects a suggested rating in the form. Nothing is saved until the author saves. */
+  function useRatingSuggestion(fieldName, level, errorId) {
+    setRadio(fieldName, level);
+    document.getElementById(errorId).classList.remove('visible');
+    checkConfidenceConsistency();
+  }
+
+  function buildQualitySuggestion(suggestions) {
+    var suggestion = suggestions.evidence;
+    if (!suggestion || !EVIDENCE_QUALITY_SUGGESTION_LABELS[suggestion.level]) {
+      return suggestions.documents
+        ? evidenceEl('p', 'evidence-muted evidence-small',
+          'No evidence quality suggestion: Climateshed couldn\'t base one on passages with confirmed labels.')
+        : null;
+    }
+    var content = evidenceEl('div');
+    content.appendChild(ratingSuggestionHeading(suggestion, EVIDENCE_QUALITY_SUGGESTION_LABELS, suggestions.stored));
+    content.appendChild(evidenceEl('p', '', suggestion.reason));
+    if (Array.isArray(suggestion.basedOn) && suggestion.basedOn.length) {
+      content.appendChild(evidenceEl('p', 'evidence-muted evidence-small', 'Based on: ' + suggestion.basedOn.join('; ')));
+    }
+    content.appendChild(evidenceButton('btn btn-secondary', 'Use this', function() {
+      useRatingSuggestion('evidenceQuality', suggestion.level, 'evidenceQualityError');
+    }));
+    content.appendChild(evidenceEl('p', 'evidence-muted evidence-small',
+      'Judged only from the labeled Climateshed passages, not from sources you add yourself.'));
+    return content;
+  }
+
+  function buildAgreementSuggestion(suggestions) {
+    var suggestion = suggestions.agreement;
+    if (!suggestion || !AGREEMENT_SUGGESTION_LABELS[suggestion.level] || !suggestion.counts) {
+      return suggestions.documents === 1
+        ? evidenceEl('p', 'evidence-muted evidence-small',
+          'No agreement suggestion: only one document addresses the claim, so there\'s nothing to compare.')
+        : null;
+    }
+    var counts = suggestion.counts;
+    var content = evidenceEl('div');
+    content.appendChild(ratingSuggestionHeading(suggestion, AGREEMENT_SUGGESTION_LABELS, suggestions.stored));
+    content.appendChild(evidenceEl('p', '', describeAgreementCounts(counts)));
+    if (counts.contradicts > counts.supports) {
+      content.appendChild(evidenceEl('p', 'evidence-warning', 'More documents contradict the claim than support it.'));
+    }
+    content.appendChild(evidenceButton('btn btn-secondary', 'Use this', function() {
+      useRatingSuggestion('agreementLevel', suggestion.level, 'agreementLevelError');
+    }));
+    content.appendChild(evidenceEl('p', 'evidence-muted evidence-small',
+      'Worked out from the source labels, counting documents: High when none contradict and at least as many '
+      + 'support as qualify, Low when as many or more contradict as support, and Medium otherwise.'));
+    return content;
   }
 
   /**
