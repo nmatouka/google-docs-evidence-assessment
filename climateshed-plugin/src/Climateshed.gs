@@ -68,7 +68,7 @@ function callClimateshedApi(method, path, payload, token) {
     response = UrlFetchApp.fetch(CONFIG.API_BASE_URL + path, options);
   } catch (err) {
     Logger.log('Climateshed request to ' + path + ' failed: ' + err.message);
-    throw new Error('Could not reach Climateshed. Check your connection and try again.');
+    throw new Error(describeFetchFailure(err.message));
   }
 
   var body = null;
@@ -78,6 +78,26 @@ function callClimateshedApi(method, path, payload, token) {
     body = null;
   }
   return { status: response.getResponseCode(), body: body };
+}
+
+/**
+ * Turns a UrlFetchApp exception into a message that says what to do.
+ * Apps Script throws (instead of returning a status) when the script lacks
+ * permission, when the URL isn't in urlFetchWhitelist, or when the host can't
+ * be reached. Each needs a different fix, so the original error is kept.
+ * @param {string} message - The exception message.
+ * @returns {string}
+ */
+function describeFetchFailure(message) {
+  var detail = message || 'unknown error';
+  if (/permission|authoriz/i.test(detail)) {
+    return 'The plugin needs your permission to connect to Climateshed. Reload the document, choose '
+      + CONFIG.ADDON_NAME + ' > Assess Selected Text, and approve the request. (' + detail + ')';
+  }
+  if (/whitelist|allowlist|not allowed/i.test(detail)) {
+    return 'The Climateshed address isn\'t in the plugin\'s list of allowed URLs. (' + detail + ')';
+  }
+  return 'Could not reach Climateshed. Check your connection and try again. (' + detail + ')';
 }
 
 /**
@@ -125,12 +145,44 @@ function describeEvidenceAccess(me) {
 }
 
 /**
+ * Checks that the author has allowed the plugin to connect to outside services.
+ * Google's consent screen lets people untick individual permissions, and a
+ * sidebar can't show the consent prompt itself, so the panel offers a link.
+ * @returns {Object|null} { success: false, permissionRequired, authorizationUrl, error }
+ *   if the permission is missing; otherwise null.
+ */
+function checkConnectPermission() {
+  try {
+    var info = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL,
+      ['https://www.googleapis.com/auth/script.external_request']);
+    if (info.getAuthorizationStatus() !== ScriptApp.AuthorizationStatus.REQUIRED) {
+      return null;
+    }
+    return {
+      success: false,
+      permissionRequired: true,
+      authorizationUrl: info.getAuthorizationUrl() || '',
+      error: CONFIG.ADDON_NAME + ' needs your permission to connect to an external service (Climateshed).'
+    };
+  } catch (err) {
+    // If this check isn't available, carry on: the request itself reports the problem.
+    Logger.log('checkConnectPermission: ' + err.message);
+    return null;
+  }
+}
+
+/**
  * Returns the author's Climateshed sign-in state and evidence access.
  * Called from the evidence panel.
  * @returns {Object} { success, signedIn, expired, email, access, error }
  */
 function getClimateshedAccount() {
   return runForSidebar(function() {
+    var missingPermission = checkConnectPermission();
+    if (missingPermission) {
+      return missingPermission;
+    }
+
     var token = getStoredToken();
     if (!token) {
       return { success: true, signedIn: false };
@@ -162,6 +214,11 @@ function getClimateshedAccount() {
  */
 function requestClimateshedCode(email) {
   return runForSidebar(function() {
+    var missingPermission = checkConnectPermission();
+    if (missingPermission) {
+      return missingPermission;
+    }
+
     var cleanEmail = cleanString(email).toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       throw new Error('Enter a valid email address.');
@@ -186,6 +243,11 @@ function requestClimateshedCode(email) {
  */
 function verifyClimateshedCode(email, code) {
   var result = runForSidebar(function() {
+    var missingPermission = checkConnectPermission();
+    if (missingPermission) {
+      return missingPermission;
+    }
+
     var cleanEmail = cleanString(email).toLowerCase();
     var cleanCode = cleanString(code);
     if (!/^\d{6}$/.test(cleanCode)) {
@@ -233,6 +295,11 @@ function signOutOfClimateshed() {
  */
 function searchClimateshedEvidence(claimText) {
   return runForSidebar(function() {
+    var missingPermission = checkConnectPermission();
+    if (missingPermission) {
+      return missingPermission;
+    }
+
     var token = getStoredToken();
     if (!token) {
       return { success: false, signedOut: true, error: 'Sign in to Climateshed to search.' };

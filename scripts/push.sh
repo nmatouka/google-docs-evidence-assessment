@@ -61,14 +61,18 @@ if [ "$(addon_name "$FREE_DIR")" = "$(addon_name "$PAID_DIR")" ]; then
   fail "both appsscript.json files use the same add-on name."
 fi
 
-if ! command -v clasp >/dev/null 2>&1; then
-  fail "clasp is not installed. Run: npm install -g @google/clasp"
+# CLASP overrides the clasp command, e.g. for a user-level install when the
+# global npm folder isn't writable:
+#   CLASP=~/.local/share/clasp/node_modules/.bin/clasp scripts/push.sh climateshed
+CLASP="${CLASP:-clasp}"
+if ! command -v "$CLASP" >/dev/null 2>&1; then
+  fail "clasp not found. Run: npm install -g @google/clasp (or set CLASP to its path)"
 fi
 
 cd "$TARGET"
 echo "Pushing the '$1' add-on from $TARGET"
 echo "Files clasp will push:"
-clasp show-file-status
+"$CLASP" show-file-status
 
 if [ "${2:-}" != "--yes" ]; then
   read -r -p "Push these files? [y/N] " answer
@@ -77,4 +81,9 @@ if [ "${2:-}" != "--yes" ]; then
   fi
 fi
 
-clasp push
+if [ "${2:-}" = "--yes" ]; then
+  # --yes is non-interactive, so also skip clasp's manifest overwrite prompt.
+  "$CLASP" push --force
+else
+  "$CLASP" push
+fi

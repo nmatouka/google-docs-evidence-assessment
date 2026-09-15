@@ -61,6 +61,10 @@
    * @param {Object} result - From getClimateshedAccount() or verifyClimateshedCode().
    */
   function onEvidenceAccount(result) {
+    if (result && result.permissionRequired) {
+      renderEvidencePermission(result);
+      return;
+    }
     if (!result || !result.success) {
       renderEvidenceError(result && result.error, function() { startEvidencePanel(evidenceState.claimText); });
       return;
@@ -92,6 +96,8 @@
         if (result && result.success) {
           evidenceState.searchedClaim = claim;
           renderEvidenceResults(result);
+        } else if (result && result.permissionRequired) {
+          renderEvidencePermission(result);
         } else if (result && result.signedOut) {
           onEvidenceAccount({ success: true, signedIn: false, expired: true });
         } else if (result && result.accessDenied) {
@@ -137,6 +143,8 @@
       .withSuccessHandler(function(result) {
         if (result && result.success) {
           onSuccess(result);
+        } else if (result && result.permissionRequired) {
+          renderEvidencePermission(result);
         } else {
           fail(result && result.error);
         }
@@ -245,6 +253,26 @@
     body.appendChild(error);
     body.appendChild(evidenceButton('link-btn', 'Use a different email', function() { renderEvidenceSignIn(''); }));
     code.focus();
+  }
+
+  /**
+   * Shown when Google hasn't granted the permission to connect to outside
+   * services. This is separate from signing in to Climateshed.
+   */
+  function renderEvidencePermission(result) {
+    var body = resetEvidenceBody();
+    body.appendChild(evidenceEl('p', 'evidence-muted',
+      (result.error || 'The plugin needs your permission to connect to Climateshed.')
+      + ' Google asks for this separately from signing in to Climateshed.'));
+    if (result.authorizationUrl && /^https:\/\//i.test(result.authorizationUrl)) {
+      body.appendChild(evidenceLink('Allow the connection', result.authorizationUrl));
+    }
+    body.appendChild(evidenceEl('p', 'evidence-muted evidence-small',
+      'After allowing it, come back and click Try again. On Google\'s permission screen, tick every permission.'));
+    body.appendChild(evidenceButton('btn btn-secondary btn-small', 'Try again', function() {
+      evidenceState.account = null;
+      startEvidencePanel(evidenceState.claimText);
+    }));
   }
 
   function renderEvidenceNoAccess(access) {
