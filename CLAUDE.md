@@ -16,11 +16,13 @@ src/
 ├── Assessment.gs          # Assessment CRUD operations
 ├── Appendix.gs            # Appendix generation and formatting
 ├── Storage.gs             # DocumentProperties persistence layer
+├── Export.gs              # Appendix export via the Drive REST API (not DriveApp — narrower scope)
 ├── Utils.gs               # Helpers (UUID, date formatting, error wrapper)
 ├── Config.gs              # Constants, version, defaults
 ├── UI/
 │   ├── Sidebar.html       # Assessment form (Google Templated HTML)
 │   ├── Manager.html       # Assessment list/management dialog
+│   ├── CitationStyle.html # Citation style picker dialog
 │   └── Styles.html        # Shared CSS (inlined via <?!= ?>)
 └── appsscript.json        # Apps Script manifest
 ```
